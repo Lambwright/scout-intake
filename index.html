@@ -674,11 +674,13 @@ function buildCustomerPayload() {
   const payload = {
     companyname: name, isPerson: false, subsidiary: { id: '2' }, isinactive: false,
     // Required for this customer to sync into Procore via the existing NetSuite
-    // automation — confirmed field names via NetSuite's Field Help on the form.
-    // custentity_r_it_pc_companies is multi-select — confirmed 2026-08-19 by a
-    // live 400 ("Invalid value for the resource or sub-resource field") on the
-    // single-select {id} shape.
-    custentity_hrc_pci_exportopc: true,
+    // automation. custentity_r_it_pc_companies is multi-select — confirmed
+    // 2026-08-19 by a live 400 on the single-select {id} shape. The export
+    // checkbox's real field id is custentity_hrc_pci_EXPORTTOPC (double-T) —
+    // confirmed by inspecting a real customer record; custentity_hrc_pci_exportopc
+    // (single-T) silently does nothing since NetSuite ignores unknown field names
+    // on write instead of erroring, unlike a genuinely invalid value.
+    custentity_hrc_pci_exporttopc: true,
     custentity_r_it_pc_companies: { items: [{ id: PC_COMPANY_ID }] }
   };
   const phone = document.getElementById('c-phone').value.trim();
