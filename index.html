@@ -253,9 +253,8 @@ const NETSUITE_WORKER_URL = 'https://netsuite.ben-a90.workers.dev';
 const SCOUT_ORIGIN = 'https://lambwright.github.io';
 
 // Internal id of the "Einbau - PC Company" PC Companies record (NetSuite → Procore
-// export mapping) — confirmed via NetSuite UI. Assumed single-select ({id}); if
-// NetSuite rejects this shape on first real use, it likely needs to be a
-// multi-select list instead: { items: [{ id: '1' }] }.
+// export mapping) — confirmed via NetSuite UI. custentity_r_it_pc_companies is a
+// multi-select field (confirmed live: the single-select {id} shape 400'd).
 const PC_COMPANY_ID = '1';
 
 // NetSuite's address "country" field expects one of its own country codes, which
@@ -676,8 +675,11 @@ function buildCustomerPayload() {
     companyname: name, isPerson: false, subsidiary: { id: '2' }, isinactive: false,
     // Required for this customer to sync into Procore via the existing NetSuite
     // automation — confirmed field names via NetSuite's Field Help on the form.
+    // custentity_r_it_pc_companies is multi-select — confirmed 2026-08-19 by a
+    // live 400 ("Invalid value for the resource or sub-resource field") on the
+    // single-select {id} shape.
     custentity_hrc_pci_exportopc: true,
-    custentity_r_it_pc_companies: { id: PC_COMPANY_ID }
+    custentity_r_it_pc_companies: { items: [{ id: PC_COMPANY_ID }] }
   };
   const phone = document.getElementById('c-phone').value.trim();
   const email = document.getElementById('c-email').value.trim();
