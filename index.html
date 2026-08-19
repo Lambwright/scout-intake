@@ -130,6 +130,18 @@
     .dup-warning { display: none; background: #fef9c3; color: #92400e; border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; font-size: 12px; }
     .success-card { display: none; background: var(--green-light); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 20px; margin-top: 12px; text-align: center; }
 
+    /* Per-item submit results / retry */
+    .submit-results { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .result-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); font-size: 12px; }
+    .result-row .result-label { flex: 1; color: var(--text-primary); }
+    .result-row .result-icon { flex-shrink: 0; }
+    .result-row.status-pending .result-icon { color: var(--text-tertiary); }
+    .result-row.status-success .result-icon { color: var(--green-dark); }
+    .result-row.status-error { border-color: var(--red-border); background: var(--red-light); }
+    .result-row.status-error .result-icon { color: var(--red); }
+    .btn-retry { background: none; border: 1px solid var(--red-border); color: var(--red); padding: 4px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; }
+    .btn-retry:hover { background: var(--red-light); }
+
     @media (max-width: 700px) {
       .contact-row { grid-template-columns: 1fr 1fr; }
       .field-grid { grid-template-columns: 1fr 1fr; }
@@ -151,7 +163,7 @@
   </div>
 </header>
 
-<div id="popout-banner" class="popout-banner">🔗 Linked to SCOUT — this window closes automatically after you submit.</div>
+<div id="popout-banner" class="popout-banner">🔗 Linked to SCOUT — the new company is sent back automatically. Close this window whenever you're done.</div>
 
 <div id="screen-login" class="login-wrap" style="display:none;">
   <div class="login-card">
@@ -200,13 +212,16 @@
     <div class="card-header"><span class="card-title">Company</span></div>
     <div class="field-grid">
       <div class="field"><label>Company name <span class="field-req">*</span></label><input type="text" id="c-name" onblur="checkDuplicateName()"></div>
+      <div class="field"><label>Company email</label><input type="email" id="c-email" placeholder="Used for statements/dunning letters"></div>
       <div class="field"><label>Phone</label><input type="tel" id="c-phone"></div>
       <div class="field"><label>Website</label><input type="text" id="c-website" placeholder="e.g. example.com"></div>
       <div class="field"><label>Street</label><input type="text" id="c-street"></div>
       <div class="field"><label>City</label><input type="text" id="c-city"></div>
       <div class="field"><label>Province/State</label><input type="text" id="c-province"></div>
       <div class="field"><label>Postal/ZIP</label><input type="text" id="c-postal"></div>
-      <div class="field"><label>Country</label><input type="text" id="c-country" value="Canada"></div>
+      <div class="field"><label>Country</label>
+        <select id="c-country"></select>
+      </div>
     </div>
     <div id="dup-warning" class="dup-warning"></div>
   </div>
@@ -220,8 +235,8 @@
   <div class="card">
     <div class="action-row">
       <button id="submit-btn" class="btn btn-green" onclick="submitIntake()">Create customer</button>
-      <span id="submit-status" class="status-msg"></span>
     </div>
+    <div id="submit-results" class="submit-results" style="display:none;"></div>
     <div id="success-card" class="success-card">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px;">✓ Customer created</div>
       <div style="font-size:12px;color:var(--text-secondary);">"<span id="success-name"></span>" — NetSuite ID <span id="success-id"></span></div>
@@ -237,14 +252,36 @@ const SCOUT_WORKER_URL = 'https://scout.ben-a90.workers.dev';
 const NETSUITE_WORKER_URL = 'https://netsuite.ben-a90.workers.dev';
 const SCOUT_ORIGIN = 'https://lambwright.github.io';
 
+// Internal id of the "Einbau - PC Company" PC Companies record (NetSuite → Procore
+// export mapping) — confirmed via NetSuite UI. Assumed single-select ({id}); if
+// NetSuite rejects this shape on first real use, it likely needs to be a
+// multi-select list instead: { items: [{ id: '1' }] }.
+const PC_COMPANY_ID = '1';
+
+// NetSuite's address "country" field expects one of its own country codes, which
+// match ISO 3166-1 alpha-2 for the countries Einbau is likely to deal with. Free
+// text (what Claude naturally extracts) isn't valid, so this list backs the
+// Country <select> and Claude's guess is matched against the names here.
+const COUNTRIES = [
+  ['CA', 'Canada'], ['US', 'United States'], ['GB', 'United Kingdom'], ['AU', 'Australia'],
+  ['DE', 'Germany'], ['FR', 'France'], ['IT', 'Italy'], ['ES', 'Spain'], ['NL', 'Netherlands'],
+  ['BE', 'Belgium'], ['CH', 'Switzerland'], ['AT', 'Austria'], ['SE', 'Sweden'], ['NO', 'Norway'],
+  ['DK', 'Denmark'], ['FI', 'Finland'], ['IE', 'Ireland'], ['PT', 'Portugal'], ['PL', 'Poland'],
+  ['MX', 'Mexico'], ['BR', 'Brazil'], ['JP', 'Japan'], ['CN', 'China'], ['IN', 'India'],
+  ['SG', 'Singapore'], ['HK', 'Hong Kong'], ['AE', 'United Arab Emirates'], ['NZ', 'New Zealand'],
+  ['ZA', 'South Africa'], ['KR', 'South Korea']
+];
+
 let authToken = null;
 let currentUser = null;
 let isPopoutMode = false;
 let pendingAttachment = null;
+let createdCustomerId = null;
 
 document.addEventListener('DOMContentLoaded', init);
 
 function init() {
+  populateCountrySelect();
   isPopoutMode = new URLSearchParams(location.search).get('mode') === 'popout';
   if (isPopoutMode) {
     document.getElementById('popout-banner').style.display = 'flex';
@@ -436,6 +473,11 @@ async function parseEmail() {
     if (Array.isArray(parsed.contacts) && parsed.contacts.length) {
       clearContacts();
       parsed.contacts.forEach(c => addContactRow(c));
+      const emailField = document.getElementById('c-email');
+      if (!emailField.value) {
+        const pick = pickCompanyEmail(parsed.contacts);
+        if (pick) emailField.value = pick;
+      }
     }
     if (parsed.needs_attachment) showSignatureHint(parsed.needs_attachment_reason);
     status.textContent = '✓ Parsed — review and adjust before submitting.';
@@ -455,6 +497,38 @@ function hideSignatureHint() {
   document.getElementById('signature-hint').style.display = 'none';
 }
 
+function populateCountrySelect() {
+  const sel = document.getElementById('c-country');
+  sel.innerHTML = COUNTRIES.map(([code, name]) => `<option value="${code}">${name}</option>`).join('');
+  sel.value = 'CA';
+}
+
+// Claude returns a free-text country name (e.g. "Italy") — NetSuite's address
+// field needs one of its own country codes, not free text. Matches by name,
+// falls back to code if Claude happened to return one, else leaves the default.
+function matchCountryCode(text) {
+  if (!text) return null;
+  const norm = String(text).trim().toLowerCase();
+  const byName = COUNTRIES.find(([, name]) => name.toLowerCase() === norm);
+  if (byName) return byName[0];
+  const byCode = COUNTRIES.find(([code]) => code.toLowerCase() === norm);
+  if (byCode) return byCode[0];
+  const partial = COUNTRIES.find(([, name]) => name.toLowerCase().includes(norm) || norm.includes(name.toLowerCase()));
+  return partial ? partial[0] : null;
+}
+
+function looksLikeBotEmail(email) {
+  if (!email) return true;
+  return /no-?reply|do-?not-?reply|mailer-daemon|notifications?@|automated|^bot@|^info@|^support@/i.test(email);
+}
+
+// Picks the first parsed contact whose email looks like a real person, for the
+// company-level email NetSuite needs to send dunning letters/statements.
+function pickCompanyEmail(contacts) {
+  const found = (contacts || []).find(c => c.email && !looksLikeBotEmail(c.email));
+  return found ? found.email : '';
+}
+
 // All values below come from Claude's parse of an externally-sent email — always
 // assign via .value/.textContent, never innerHTML, so a crafted email can't inject
 // markup into a page holding a live session token.
@@ -464,7 +538,10 @@ function populateCompanyFields(company) {
   if (company.city) document.getElementById('c-city').value = company.city;
   if (company.province) document.getElementById('c-province').value = company.province;
   if (company.postal) document.getElementById('c-postal').value = company.postal;
-  if (company.country) document.getElementById('c-country').value = company.country;
+  if (company.country) {
+    const code = matchCountryCode(company.country);
+    if (code) document.getElementById('c-country').value = code;
+  }
   if (company.phone) document.getElementById('c-phone').value = company.phone;
   if (company.website) document.getElementById('c-website').value = company.website;
 }
@@ -568,79 +645,141 @@ async function findCustomerIdByExactName(name) {
   } catch (e) { return null; }
 }
 
-async function submitIntake() {
+// Per-item status row in #submit-results — reused for the company and each
+// contact so both get their own independent retry button on failure.
+function renderResultRow(id, label, status, errorMsg, retryHandler) {
+  let row = document.getElementById(`result-${id}`);
+  if (!row) {
+    row = document.createElement('div');
+    row.id = `result-${id}`;
+    row.innerHTML = '<span class="result-icon"></span><span class="result-label"></span>';
+    document.getElementById('submit-results').appendChild(row);
+  }
+  row.className = `result-row status-${status}`;
+  row.querySelector('.result-label').textContent = (status === 'error' && errorMsg) ? `${label} — ${errorMsg}` : label;
+  row.querySelector('.result-icon').innerHTML = status === 'success' ? '✓' : status === 'error' ? '✗' : '<span class="spinner"></span>';
+  const existingBtn = row.querySelector('.btn-retry');
+  if (existingBtn) existingBtn.remove();
+  if (status === 'error' && retryHandler) {
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'btn-retry';
+    retryBtn.textContent = 'Retry';
+    retryBtn.onclick = retryHandler;
+    row.appendChild(retryBtn);
+  }
+}
+
+function buildCustomerPayload() {
   const name = document.getElementById('c-name').value.trim();
-  if (!name) { alert('Company name is required.'); return; }
-
-  const btn = document.getElementById('submit-btn');
-  const status = document.getElementById('submit-status');
-  btn.disabled = true;
-  status.innerHTML = '<span class="spinner"></span> Creating customer in NetSuite…';
-
-  const customerPayload = { companyname: name, isPerson: false, subsidiary: { id: '2' }, isinactive: false };
+  const payload = {
+    companyname: name, isPerson: false, subsidiary: { id: '2' }, isinactive: false,
+    // Required for this customer to sync into Procore via the existing NetSuite
+    // automation — confirmed field names via NetSuite's Field Help on the form.
+    custentity_hrc_pci_exportopc: true,
+    custentity_r_it_pc_companies: { id: PC_COMPANY_ID }
+  };
   const phone = document.getElementById('c-phone').value.trim();
-  const website = document.getElementById('c-website').value.trim();
-  if (phone) customerPayload.phone = phone;
-  if (website) customerPayload.url = website;
+  const email = document.getElementById('c-email').value.trim();
+  let website = document.getElementById('c-website').value.trim();
+  if (website && !/^https?:\/\//i.test(website)) website = 'https://' + website;
+  if (phone) payload.phone = phone;
+  if (email) payload.email = email; // NetSuite needs a company-level email to send dunning letters/statements
+  if (website) payload.url = website;
 
   const street = document.getElementById('c-street').value.trim();
   const city = document.getElementById('c-city').value.trim();
   const province = document.getElementById('c-province').value.trim();
   const postal = document.getElementById('c-postal').value.trim();
-  const country = document.getElementById('c-country').value.trim();
+  const country = document.getElementById('c-country').value;
   if (street || city || province || postal) {
-    customerPayload.addressbook = { items: [{
+    payload.addressbook = { items: [{
       defaultShipping: true, defaultBilling: true,
       addressbookaddress: { addr1: street, city, state: province, zip: postal, country: country || 'CA' }
     }] };
   }
+  return payload;
+}
 
-  const customerResult = await postToNetsuite('/customer', customerPayload);
-  if (!customerResult.ok) {
-    status.textContent = `✗ Failed to create customer: ${customerResult.error}`;
+async function submitIntake() {
+  const name = document.getElementById('c-name').value.trim();
+  if (!name) { alert('Company name is required.'); return; }
+
+  document.getElementById('submit-results').style.display = 'flex';
+  document.getElementById('submit-results').innerHTML = '';
+  createdCustomerId = null;
+  await attemptCreateCompany();
+}
+
+async function attemptCreateCompany() {
+  const btn = document.getElementById('submit-btn');
+  const name = document.getElementById('c-name').value.trim();
+  btn.disabled = true;
+  renderResultRow('company', `Company — "${name}"`, 'pending');
+
+  const result = await postToNetsuite('/customer', buildCustomerPayload());
+
+  if (!result.ok) {
+    renderResultRow('company', `Company — "${name}"`, 'error', result.error, retryCompany);
     btn.disabled = false;
-    if (isPopoutMode) reportErrorToOpener(`Failed to create customer: ${customerResult.error}`);
+    if (isPopoutMode) reportErrorToOpener(`Failed to create customer: ${result.error}`);
     return;
   }
 
-  let customerId = customerResult.id;
-  if (!customerId) {
-    status.innerHTML = '<span class="spinner"></span> Created — confirming NetSuite ID…';
-    customerId = await findCustomerIdByExactName(name);
-  }
-  if (!customerId) {
-    status.textContent = '⚠ Customer may have been created but no ID could be confirmed — check NetSuite directly (or use SCOUT\'s refresh) before retrying, to avoid a duplicate.';
+  let id = result.id;
+  if (!id) id = await findCustomerIdByExactName(name);
+  if (!id) {
+    renderResultRow('company', `Company — "${name}"`, 'error', 'Created but no ID could be confirmed — check NetSuite before retrying, to avoid a duplicate.', retryCompany);
     btn.disabled = false;
     if (isPopoutMode) reportErrorToOpener('Customer created but ID could not be confirmed — check NetSuite before retrying.');
     return;
   }
 
+  createdCustomerId = id;
+  renderResultRow('company', `Company — "${name}" (NetSuite ID ${id})`, 'success');
+  btn.textContent = '✓ Customer created';
+  // Deliberately left disabled from here on — the company now exists, so a second
+  // click on this button would create a duplicate. Contact-level retries below
+  // use their own per-row buttons instead.
+
+  if (isPopoutMode) reportSuccessToOpener({ id, name });
+  else showStandaloneSuccess(name, id);
+
+  attemptCreateAllContacts();
+}
+
+function retryCompany() { attemptCreateCompany(); }
+
+async function attemptCreateAllContacts() {
   const contacts = collectContacts();
-  let contactsOk = 0;
-  for (const c of contacts) {
-    status.innerHTML = `<span class="spinner"></span> Saving contact ${contactsOk + 1} of ${contacts.length}…`;
-    const contactPayload = { company: { id: customerId } };
-    if (c.fname) contactPayload.firstname = c.fname;
-    if (c.lname) contactPayload.lastname = c.lname;
-    if (c.title) contactPayload.title = c.title;
-    if (c.email) contactPayload.email = c.email;
-    if (c.phone) contactPayload.phone = c.phone;
-    const cr = await postToNetsuite('/contact', contactPayload);
-    if (cr.ok) contactsOk++;
+  for (let i = 0; i < contacts.length; i++) {
+    await attemptCreateContact(i, contacts[i]);
   }
+}
 
-  status.textContent = contacts.length
-    ? (contactsOk === contacts.length
-        ? `✓ "${name}" created with ${contactsOk} contact${contactsOk === 1 ? '' : 's'}.`
-        : `✓ "${name}" created — ${contactsOk} of ${contacts.length} contacts saved (some failed; safe to add those manually in NetSuite).`)
-    : `✓ "${name}" created.`;
-  btn.disabled = false;
+async function attemptCreateContact(index, data) {
+  const label = [data.fname, data.lname].filter(Boolean).join(' ') || data.email || `Contact ${index + 1}`;
+  renderResultRow(`contact-${index}`, `Contact — ${label}`, 'pending');
 
-  if (isPopoutMode) {
-    reportSuccessToOpener({ id: customerId, name });
+  const payload = { company: { id: createdCustomerId } };
+  if (data.fname) payload.firstname = data.fname;
+  if (data.lname) payload.lastname = data.lname;
+  if (data.title) payload.title = data.title;
+  if (data.email) payload.email = data.email;
+  if (data.phone) payload.phone = data.phone;
+
+  const result = await postToNetsuite('/contact', payload);
+  if (result.ok) {
+    renderResultRow(`contact-${index}`, `Contact — ${label}`, 'success');
   } else {
-    showStandaloneSuccess(name, customerId);
+    renderResultRow(`contact-${index}`, `Contact — ${label}`, 'error', result.error, () => retryContact(index));
   }
+}
+
+function retryContact(index) {
+  const data = collectContacts()[index];
+  if (!data) return;
+  attemptCreateContact(index, data);
 }
 
 // ---------- popout messaging ----------
@@ -651,9 +790,8 @@ function reportSuccessToOpener(customer) {
     source: 'einbau-intake', type: 'INTAKE_COMPANY_CREATED',
     customer: { id: customer.id, name: customer.name, procoreId: null }
   }, SCOUT_ORIGIN);
-  const status = document.getElementById('submit-status');
-  status.textContent += ' Closing this window…';
-  setTimeout(() => { try { window.close(); } catch (e) {} }, 1200);
+  // Deliberately does NOT close the window — left open until the user closes it
+  // themselves, so they can see contact-creation results and retry failures.
 }
 
 function reportErrorToOpener(message) {
@@ -672,11 +810,12 @@ function showStandaloneSuccess(name, id) {
 function resetForAnother() {
   document.getElementById('intake-email').value = '';
   document.getElementById('c-name').value = '';
+  document.getElementById('c-email').value = '';
   document.getElementById('c-street').value = '';
   document.getElementById('c-city').value = '';
   document.getElementById('c-province').value = '';
   document.getElementById('c-postal').value = '';
-  document.getElementById('c-country').value = 'Canada';
+  document.getElementById('c-country').value = 'CA';
   document.getElementById('c-phone').value = '';
   document.getElementById('c-website').value = '';
   clearContacts();
@@ -687,8 +826,14 @@ function resetForAnother() {
   hideSignatureHint();
   document.getElementById('dup-warning').style.display = 'none';
   document.getElementById('parse-status').textContent = '';
-  document.getElementById('submit-status').textContent = '';
   document.getElementById('success-card').style.display = 'none';
+  const submitResults = document.getElementById('submit-results');
+  submitResults.innerHTML = '';
+  submitResults.style.display = 'none';
+  createdCustomerId = null;
+  const submitBtn = document.getElementById('submit-btn');
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Create customer';
 }
 </script>
 </body>
