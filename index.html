@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INTAKE — Einbau New Company</title>
+  <style>
+    :root {
+      --green: #8FC742;
+      --green-dark: #7ab535;
+      --green-light: #f0f7e6;
+      --grey-900: #111111;
+      --grey-800: #1e1e1e;
+      --grey-700: #2d2d2d;
+      --grey-600: #3d3d3d;
+      --grey-500: #5a5a5a;
+      --grey-400: #888888;
+      --grey-300: #bbbbbb;
+      --grey-200: #e0e0e0;
+      --grey-100: #f4f4f4;
+      --grey-50: #fafafa;
+      --white: #ffffff;
+      --red: #e53e3e;
+      --red-light: #fff5f5;
+      --red-border: #feb2b2;
+      --amber: #d97706;
+      --blue: #2563eb;
+
+      --bg-page: var(--grey-100);
+      --bg-card: var(--white);
+      --bg-input: var(--grey-50);
+      --bg-header: var(--grey-900);
+      --border-color: var(--grey-200);
+      --border-input: #d4d4d4;
+      --text-primary: #111111;
+      --text-secondary: #555555;
+      --text-tertiary: #999999;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.04);
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-page: #141414;
+        --bg-card: #1e1e1e;
+        --bg-input: #252525;
+        --bg-header: #0a0a0a;
+        --border-color: #2e2e2e;
+        --border-input: #333333;
+        --text-primary: #f0f0f0;
+        --text-secondary: #aaaaaa;
+        --text-tertiary: #666666;
+        --red-light: #1a0a0a;
+        --red-border: #7f1d1d;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+        --shadow-md: 0 4px 6px rgba(0,0,0,0.3);
+        --green-light: #1a2a0a;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: var(--text-primary); background: var(--bg-page); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
+    .header { background: var(--bg-header); padding: 0 24px; display: flex; align-items: center; height: 56px; position: sticky; top: 0; z-index: 200; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .header-divider { width: 1px; height: 24px; background: rgba(255,255,255,0.15); margin: 0 16px; }
+    .header-badge { display: flex; flex-direction: column; }
+    .header-badge-name { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--green); line-height: 1; }
+    .header-badge-sub { font-size: 10px; color: rgba(255,255,255,0.4); letter-spacing: 0.06em; margin-top: 2px; }
+    .header-logo { height: 32px; }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+
+    .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 20px; margin-bottom: 12px; box-shadow: var(--shadow-sm); }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .card-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); }
+
+    .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 11px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.02em; }
+    .field input, .field select, .field textarea {
+      width: 100%; font-size: 13px; padding: 8px 11px;
+      border: 1px solid var(--border-input); border-radius: var(--radius-sm);
+      background: var(--bg-input); color: var(--text-primary);
+      font-family: inherit; transition: all 0.15s;
+      appearance: none; -webkit-appearance: none;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--green); background: var(--bg-card); box-shadow: 0 0 0 3px rgba(143,199,66,0.12); }
+    .field-req { color: var(--red); margin-left: 2px; }
+
+    .parse-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 20px; margin-bottom: 12px; box-shadow: var(--shadow-sm); }
+    .parse-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.02em; display: block; margin-bottom: 6px; }
+    .parse-textarea { width: 100%; height: 130px; min-height: 130px; max-height: 260px; font-size: 13px; padding: 11px 13px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); font-family: inherit; resize: vertical; line-height: 1.5; transition: border-color 0.15s; }
+    .parse-textarea:focus { outline: none; border-color: var(--green); background: var(--bg-card); box-shadow: 0 0 0 3px rgba(143,199,66,0.12); }
+    .parse-controls { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+
+    .btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; border: none; white-space: nowrap; letter-spacing: 0.01em; }
+    .btn-green { background: var(--green); color: #fff; }
+    .btn-green:hover:not(:disabled) { background: var(--green-dark); box-shadow: 0 2px 8px rgba(143,199,66,0.4); }
+    .btn-green:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-ghost { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border-input); }
+    .btn-ghost:hover { color: var(--text-primary); border-color: var(--text-tertiary); }
+
+    .status-msg { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+    .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--border-color); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .action-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+    /* Login */
+    .login-wrap { min-height: calc(100vh - 56px); display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .login-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); padding: 32px; width: 100%; max-width: 340px; }
+    .login-title { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--green); margin-bottom: 4px; }
+    .login-sub { font-size: 11px; color: var(--text-tertiary); margin-bottom: 20px; }
+    .login-error { font-size: 12px; color: var(--red); margin-top: 10px; min-height: 16px; }
+
+    /* Popout banner */
+    .popout-banner { display: none; align-items: center; gap: 8px; background: var(--green-light); color: var(--green-dark); font-size: 11px; font-weight: 600; padding: 8px 16px; border-bottom: 1px solid var(--border-color); }
+
+    /* Contacts */
+    .contact-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1.3fr 1fr auto; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .contact-row input { font-size: 13px; padding: 8px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); font-family: inherit; }
+    .contact-row input:focus { outline: none; border-color: var(--green); background: var(--bg-card); box-shadow: 0 0 0 3px rgba(143,199,66,0.12); }
+    .btn-remove-contact { background: none; border: 1px solid var(--border-input); border-radius: var(--radius-sm); color: var(--text-tertiary); width: 30px; height: 30px; cursor: pointer; font-size: 16px; line-height: 1; }
+    .btn-remove-contact:hover { color: var(--red); border-color: var(--red-border); }
+
+    .signature-hint { display: none; align-items: flex-start; gap: 10px; background: var(--green-light); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 10px; font-size: 12px; color: var(--text-primary); width: 100%; }
+    .dup-warning { display: none; background: #fef9c3; color: #92400e; border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; font-size: 12px; }
+    .success-card { display: none; background: var(--green-light); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 20px; margin-top: 12px; text-align: center; }
+
+    @media (max-width: 700px) {
+      .contact-row { grid-template-columns: 1fr 1fr; }
+      .field-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <img src="https://lambwright.github.io/scout-addin/logo.png" alt="Einbau" class="header-logo">
+  <div class="header-divider"></div>
+  <div class="header-badge">
+    <span class="header-badge-name">INTAKE</span>
+    <span class="header-badge-sub">NEW COMPANY</span>
+  </div>
+  <div id="user-badge" style="margin-left:auto;display:none;align-items:center;gap:12px;">
+    <span id="current-user-name" style="font-size:11px;color:rgba(255,255,255,0.6);"></span>
+    <button onclick="doLogout()" class="btn btn-ghost" style="padding:5px 12px;font-size:11px;">Log out</button>
+  </div>
+</header>
+
+<div id="popout-banner" class="popout-banner">🔗 Linked to SCOUT — this window closes automatically after you submit.</div>
+
+<div id="screen-login" class="login-wrap" style="display:none;">
+  <div class="login-card">
+    <div class="login-title">EINBAU ID</div>
+    <div class="login-sub">Sign in to use INTAKE</div>
+    <form onsubmit="doLogin(event)">
+      <div class="field" style="margin-bottom:12px;">
+        <label>Username</label>
+        <input type="text" id="login-username" autocomplete="username" required>
+      </div>
+      <div class="field" style="margin-bottom:16px;">
+        <label>Password</label>
+        <input type="password" id="login-password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" id="login-btn" class="btn btn-green" style="width:100%;justify-content:center;">Sign in</button>
+      <div id="login-error" class="login-error"></div>
+    </form>
+  </div>
+</div>
+
+<div id="screen-app" class="container" style="display:none;">
+
+  <div class="parse-card">
+    <label class="parse-label">Paste RFQ email content</label>
+    <textarea id="intake-email" class="parse-textarea" placeholder="Paste the email here…"></textarea>
+    <div class="parse-controls">
+      <button id="parse-btn" class="btn btn-green" onclick="parseEmail()">✦ Parse with Claude</button>
+      <label class="btn btn-ghost" style="cursor:pointer;">
+        📎 Attach screenshot/PDF
+        <input type="file" id="attachment-input" accept="image/*,application/pdf" style="display:none;" onchange="handleAttachment(this)">
+      </label>
+      <span id="attachment-name" style="font-size:11px;color:var(--text-tertiary);"></span>
+      <span id="parse-status" class="status-msg"></span>
+    </div>
+    <div id="signature-hint" class="signature-hint">
+      <span style="font-size:16px;">✉</span>
+      <div>
+        <div style="font-weight:600;margin-bottom:2px;">Might be missing signature details</div>
+        <div id="signature-hint-reason" style="color:var(--text-secondary);"></div>
+        <div style="margin-top:6px;color:var(--text-secondary);">Attach a screenshot or PDF of the email above, then click Parse again — or just fill in the fields below manually.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Company</span></div>
+    <div class="field-grid">
+      <div class="field"><label>Company name <span class="field-req">*</span></label><input type="text" id="c-name" onblur="checkDuplicateName()"></div>
+      <div class="field"><label>Phone</label><input type="tel" id="c-phone"></div>
+      <div class="field"><label>Website</label><input type="text" id="c-website" placeholder="e.g. example.com"></div>
+      <div class="field"><label>Street</label><input type="text" id="c-street"></div>
+      <div class="field"><label>City</label><input type="text" id="c-city"></div>
+      <div class="field"><label>Province/State</label><input type="text" id="c-province"></div>
+      <div class="field"><label>Postal/ZIP</label><input type="text" id="c-postal"></div>
+      <div class="field"><label>Country</label><input type="text" id="c-country" value="Canada"></div>
+    </div>
+    <div id="dup-warning" class="dup-warning"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Contacts</span></div>
+    <div id="contacts-list"></div>
+    <button class="btn btn-ghost" onclick="addContactRow()">+ Add contact</button>
+  </div>
+
+  <div class="card">
+    <div class="action-row">
+      <button id="submit-btn" class="btn btn-green" onclick="submitIntake()">Create customer</button>
+      <span id="submit-status" class="status-msg"></span>
+    </div>
+    <div id="success-card" class="success-card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px;">✓ Customer created</div>
+      <div style="font-size:12px;color:var(--text-secondary);">"<span id="success-name"></span>" — NetSuite ID <span id="success-id"></span></div>
+      <button class="btn btn-ghost" style="margin-top:14px;" onclick="resetForAnother()">Create another</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const AUTH_URL = 'https://auth.ben-a90.workers.dev';
+const SCOUT_WORKER_URL = 'https://scout.ben-a90.workers.dev';
+const NETSUITE_WORKER_URL = 'https://netsuite.ben-a90.workers.dev';
+const SCOUT_ORIGIN = 'https://lambwright.github.io';
+
+let authToken = null;
+let currentUser = null;
+let isPopoutMode = false;
+let pendingAttachment = null;
+
+document.addEventListener('DOMContentLoaded', init);
+
+function init() {
+  isPopoutMode = new URLSearchParams(location.search).get('mode') === 'popout';
+  if (isPopoutMode) {
+    document.getElementById('popout-banner').style.display = 'flex';
+    window.addEventListener('message', handleParentMessage);
+    if (window.opener) {
+      window.opener.postMessage({ source: 'einbau-intake', type: 'INTAKE_READY' }, SCOUT_ORIGIN);
+    }
+    window.addEventListener('beforeunload', () => {
+      if (window.opener) {
+        try { window.opener.postMessage({ source: 'einbau-intake', type: 'INTAKE_CLOSED' }, SCOUT_ORIGIN); } catch (e) {}
+      }
+    });
+    // Fall back to a normal login screen if SCOUT never responds (e.g. opened stale)
+    setTimeout(() => { if (!authToken) attemptStandaloneSession(); }, 4000);
+  } else {
+    attemptStandaloneSession();
+  }
+}
+
+async function handleParentMessage(event) {
+  if (event.origin !== SCOUT_ORIGIN) return;
+  if (!event.data || event.data.source !== 'einbau-scout' || event.data.type !== 'SCOUT_INIT') return;
+  if (authToken) return; // already handled (e.g. timeout fallback already ran)
+
+  const token = event.data.token;
+  const result = token ? await verifySession(token) : { valid: false };
+  if (result.valid) {
+    authToken = result.refreshedToken || token;
+    sessionStorage.setItem('einbau_intake_token', authToken);
+    currentUser = result.user;
+    const emailField = document.getElementById('intake-email');
+    if (event.data.rfqEmailText && !emailField.value) emailField.value = event.data.rfqEmailText;
+    showApp();
+  } else {
+    attemptStandaloneSession();
+  }
+}
+
+async function attemptStandaloneSession() {
+  if (authToken) return;
+  const stored = (isPopoutMode ? sessionStorage : localStorage).getItem('einbau_intake_token');
+  if (stored) {
+    const result = await verifySession(stored);
+    if (result.valid) {
+      authToken = result.refreshedToken || stored;
+      (isPopoutMode ? sessionStorage : localStorage).setItem('einbau_intake_token', authToken);
+      currentUser = result.user;
+      showApp();
+      return;
+    }
+    (isPopoutMode ? sessionStorage : localStorage).removeItem('einbau_intake_token');
+  }
+  showLogin();
+}
+
+async function verifySession(token) {
+  try {
+    const res = await fetch(`${AUTH_URL}/auth/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({})
+    });
+    return await res.json();
+  } catch (e) { return { valid: false, error: 'network_error' }; }
+}
+
+function showLogin() {
+  document.getElementById('screen-login').style.display = 'flex';
+  document.getElementById('screen-app').style.display = 'none';
+  document.getElementById('user-badge').style.display = 'none';
+}
+
+function showApp() {
+  document.getElementById('screen-login').style.display = 'none';
+  document.getElementById('screen-app').style.display = 'block';
+  document.getElementById('user-badge').style.display = 'flex';
+  document.getElementById('current-user-name').textContent = currentUser ? currentUser.displayName : '';
+  if (!document.querySelector('#contacts-list .contact-row')) addContactRow();
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  errEl.textContent = '';
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${AUTH_URL}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.token) {
+      errEl.textContent = data.error === 'rate_limited' ? 'Too many attempts — try again later.' : 'Invalid username or password.';
+      btn.disabled = false;
+      return;
+    }
+    authToken = data.token;
+    currentUser = data.user;
+    localStorage.setItem('einbau_intake_token', data.token);
+    showApp();
+  } catch (err) {
+    errEl.textContent = 'Could not reach the login server — check your connection.';
+  }
+  btn.disabled = false;
+}
+
+function doLogout() {
+  authToken = null; currentUser = null;
+  localStorage.removeItem('einbau_intake_token');
+  sessionStorage.removeItem('einbau_intake_token');
+  showLogin();
+}
+
+// ---------- attachment (mirrors SCOUT's Copilot attachment pattern) ----------
+
+function handleAttachment(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 20 * 1024 * 1024) {
+    document.getElementById('attachment-name').textContent = '⚠ File too large (max 20MB) — please compress or split the file';
+    input.value = '';
+    return;
+  }
+  document.getElementById('attachment-name').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const base64 = e.target.result.split(',')[1];
+    const mediaType = file.type || 'application/octet-stream';
+    pendingAttachment = { base64, mediaType, name: file.name };
+  };
+  reader.readAsDataURL(file);
+}
+
+// ---------- parse ----------
+
+function buildParsePrompt(emailText) {
+  return `You are helping Einbau Services Ltd. (a custom architectural millwork installation company) create a new NetSuite Customer record from an inbound RFQ email. Extract company and contact info from the email below.
+
+Pay special attention to the signature block — name, title, phone, and company name usually live there, not the body. Signatures are sometimes embedded as an image or logo that plain text extraction can't read. If you suspect there's a signature you can't fully read, set "needs_attachment": true and briefly explain why in "needs_attachment_reason".
+
+Respond with ONLY this JSON, no markdown fences, no extra text:
+{"company":{"name":"","street":"","city":"","province":"","postal":"","country":"","phone":"","website":""},
+ "contacts":[{"fname":"","lname":"","title":"","email":"","phone":""}],
+ "needs_attachment":false,"needs_attachment_reason":"","confidence_notes":""}
+
+Leave a field empty ("") if you can't find it confidently — don't guess. Only include a contact entry if you found at least a name or an email for that person. One entry per person who signed or was CC'd, if identifiable.
+
+EMAIL:
+${emailText}`;
+}
+
+async function parseEmail() {
+  const emailText = document.getElementById('intake-email').value.trim();
+  if (!emailText) { alert('Paste an RFQ email first.'); return; }
+
+  const btn = document.getElementById('parse-btn');
+  const status = document.getElementById('parse-status');
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span> Parsing…';
+  hideSignatureHint();
+
+  const prompt = buildParsePrompt(emailText);
+  let content;
+  if (pendingAttachment) {
+    content = [
+      { type: pendingAttachment.mediaType === 'application/pdf' ? 'document' : 'image',
+        source: { type: 'base64', media_type: pendingAttachment.mediaType, data: pendingAttachment.base64 } },
+      { type: 'text', text: prompt }
+    ];
+  } else {
+    content = prompt;
+  }
+
+  try {
+    const res = await fetch(SCOUT_WORKER_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content }] })
+    });
+    const data = await res.json();
+    if (data.error) { status.textContent = `Parse error: ${data.error.message || 'unknown error'}`; btn.disabled = false; return; }
+    const raw = data.content[0].text;
+    const clean = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(clean);
+
+    populateCompanyFields(parsed.company || {});
+    if (Array.isArray(parsed.contacts) && parsed.contacts.length) {
+      clearContacts();
+      parsed.contacts.forEach(c => addContactRow(c));
+    }
+    if (parsed.needs_attachment) showSignatureHint(parsed.needs_attachment_reason);
+    status.textContent = '✓ Parsed — review and adjust before submitting.';
+    checkDuplicateName();
+  } catch (e) {
+    status.textContent = 'Parse failed — check the email text, or try attaching a screenshot instead.';
+    console.error(e);
+  }
+  btn.disabled = false;
+}
+
+function showSignatureHint(reason) {
+  document.getElementById('signature-hint-reason').textContent = reason || 'This email may contain a signature image that text parsing can\'t read.';
+  document.getElementById('signature-hint').style.display = 'flex';
+}
+function hideSignatureHint() {
+  document.getElementById('signature-hint').style.display = 'none';
+}
+
+// All values below come from Claude's parse of an externally-sent email — always
+// assign via .value/.textContent, never innerHTML, so a crafted email can't inject
+// markup into a page holding a live session token.
+function populateCompanyFields(company) {
+  if (company.name) document.getElementById('c-name').value = company.name;
+  if (company.street) document.getElementById('c-street').value = company.street;
+  if (company.city) document.getElementById('c-city').value = company.city;
+  if (company.province) document.getElementById('c-province').value = company.province;
+  if (company.postal) document.getElementById('c-postal').value = company.postal;
+  if (company.country) document.getElementById('c-country').value = company.country;
+  if (company.phone) document.getElementById('c-phone').value = company.phone;
+  if (company.website) document.getElementById('c-website').value = company.website;
+}
+
+// ---------- contacts ----------
+
+function clearContacts() {
+  document.getElementById('contacts-list').innerHTML = '';
+}
+
+function addContactRow(data) {
+  data = data || {};
+  const row = document.createElement('div');
+  row.className = 'contact-row';
+  // Static, app-authored markup only — no interpolation of parsed data here.
+  row.innerHTML = `
+    <input type="text" class="c-fname" placeholder="First name">
+    <input type="text" class="c-lname" placeholder="Last name">
+    <input type="text" class="c-title" placeholder="Title / role">
+    <input type="email" class="c-email" placeholder="Email">
+    <input type="tel" class="c-phone" placeholder="Phone">
+    <button type="button" class="btn-remove-contact" title="Remove contact">×</button>
+  `;
+  row.querySelector('.c-fname').value = data.fname || '';
+  row.querySelector('.c-lname').value = data.lname || '';
+  row.querySelector('.c-title').value = data.title || '';
+  row.querySelector('.c-email').value = data.email || '';
+  row.querySelector('.c-phone').value = data.phone || '';
+  row.querySelector('.btn-remove-contact').addEventListener('click', () => row.remove());
+  document.getElementById('contacts-list').appendChild(row);
+}
+
+function collectContacts() {
+  return Array.from(document.querySelectorAll('#contacts-list .contact-row')).map(row => ({
+    fname: row.querySelector('.c-fname').value.trim(),
+    lname: row.querySelector('.c-lname').value.trim(),
+    title: row.querySelector('.c-title').value.trim(),
+    email: row.querySelector('.c-email').value.trim(),
+    phone: row.querySelector('.c-phone').value.trim()
+  })).filter(c => c.fname || c.lname || c.email);
+}
+
+// ---------- duplicate check (warn, don't block) ----------
+
+function escapeSql(str) {
+  return String(str).replace(/'/g, "''");
+}
+
+async function checkDuplicateName() {
+  const name = document.getElementById('c-name').value.trim();
+  const warnEl = document.getElementById('dup-warning');
+  warnEl.style.display = 'none';
+  if (!name || name.length < 3) return;
+  try {
+    const res = await fetch(NETSUITE_WORKER_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
+        data: { q: `SELECT id, companyname FROM customer WHERE UPPER(companyname) LIKE UPPER('%${escapeSql(name)}%') AND isinactive = 'F'` } })
+    });
+    const data = await res.json();
+    if (data.items && data.items.length) {
+      warnEl.textContent = `⚠ Possible existing match: ${data.items.map(i => i.companyname).join(', ')} — double-check before creating a duplicate.`;
+      warnEl.style.display = 'block';
+    }
+  } catch (e) { /* non-blocking */ }
+}
+
+// ---------- submit ----------
+
+async function postToNetsuite(path, data) {
+  try {
+    const res = await fetch(NETSUITE_WORKER_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'POST', path, data })
+    });
+    const body = await res.json().catch(() => null);
+    if (!body) return { ok: false, error: 'Empty or invalid response from NetSuite.' };
+    if (body['o:errorDetails'] || body.error) {
+      const detail = (body['o:errorDetails'] && body['o:errorDetails'][0] && body['o:errorDetails'][0].detail) || body.error || body.title || 'Unknown NetSuite error';
+      return { ok: false, error: detail, raw: body };
+    }
+    let id = null;
+    if (body.location) { const m = String(body.location).match(/\/(\d+)(?:\?.*)?$/); if (m) id = m[1]; }
+    if (!id && body.id) id = String(body.id);
+    if (!id && body.internalId) id = String(body.internalId);
+    return { ok: true, id, raw: body };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function findCustomerIdByExactName(name) {
+  try {
+    const res = await fetch(NETSUITE_WORKER_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
+        data: { q: `SELECT id FROM customer WHERE companyname = '${escapeSql(name)}' ORDER BY id DESC` } })
+    });
+    const data = await res.json();
+    return data.items && data.items[0] ? String(data.items[0].id) : null;
+  } catch (e) { return null; }
+}
+
+async function submitIntake() {
+  const name = document.getElementById('c-name').value.trim();
+  if (!name) { alert('Company name is required.'); return; }
+
+  const btn = document.getElementById('submit-btn');
+  const status = document.getElementById('submit-status');
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span> Creating customer in NetSuite…';
+
+  const customerPayload = { companyname: name, isPerson: false, subsidiary: { id: '2' }, isinactive: false };
+  const phone = document.getElementById('c-phone').value.trim();
+  const website = document.getElementById('c-website').value.trim();
+  if (phone) customerPayload.phone = phone;
+  if (website) customerPayload.url = website;
+
+  const street = document.getElementById('c-street').value.trim();
+  const city = document.getElementById('c-city').value.trim();
+  const province = document.getElementById('c-province').value.trim();
+  const postal = document.getElementById('c-postal').value.trim();
+  const country = document.getElementById('c-country').value.trim();
+  if (street || city || province || postal) {
+    customerPayload.addressbook = { items: [{
+      defaultShipping: true, defaultBilling: true,
+      addressbookaddress: { addr1: street, city, state: province, zip: postal, country: country || 'CA' }
+    }] };
+  }
+
+  const customerResult = await postToNetsuite('/customer', customerPayload);
+  if (!customerResult.ok) {
+    status.textContent = `✗ Failed to create customer: ${customerResult.error}`;
+    btn.disabled = false;
+    if (isPopoutMode) reportErrorToOpener(`Failed to create customer: ${customerResult.error}`);
+    return;
+  }
+
+  let customerId = customerResult.id;
+  if (!customerId) {
+    status.innerHTML = '<span class="spinner"></span> Created — confirming NetSuite ID…';
+    customerId = await findCustomerIdByExactName(name);
+  }
+  if (!customerId) {
+    status.textContent = '⚠ Customer may have been created but no ID could be confirmed — check NetSuite directly (or use SCOUT\'s refresh) before retrying, to avoid a duplicate.';
+    btn.disabled = false;
+    if (isPopoutMode) reportErrorToOpener('Customer created but ID could not be confirmed — check NetSuite before retrying.');
+    return;
+  }
+
+  const contacts = collectContacts();
+  let contactsOk = 0;
+  for (const c of contacts) {
+    status.innerHTML = `<span class="spinner"></span> Saving contact ${contactsOk + 1} of ${contacts.length}…`;
+    const contactPayload = { company: { id: customerId } };
+    if (c.fname) contactPayload.firstname = c.fname;
+    if (c.lname) contactPayload.lastname = c.lname;
+    if (c.title) contactPayload.title = c.title;
+    if (c.email) contactPayload.email = c.email;
+    if (c.phone) contactPayload.phone = c.phone;
+    const cr = await postToNetsuite('/contact', contactPayload);
+    if (cr.ok) contactsOk++;
+  }
+
+  status.textContent = contacts.length
+    ? (contactsOk === contacts.length
+        ? `✓ "${name}" created with ${contactsOk} contact${contactsOk === 1 ? '' : 's'}.`
+        : `✓ "${name}" created — ${contactsOk} of ${contacts.length} contacts saved (some failed; safe to add those manually in NetSuite).`)
+    : `✓ "${name}" created.`;
+  btn.disabled = false;
+
+  if (isPopoutMode) {
+    reportSuccessToOpener({ id: customerId, name });
+  } else {
+    showStandaloneSuccess(name, customerId);
+  }
+}
+
+// ---------- popout messaging ----------
+
+function reportSuccessToOpener(customer) {
+  if (!window.opener) return;
+  window.opener.postMessage({
+    source: 'einbau-intake', type: 'INTAKE_COMPANY_CREATED',
+    customer: { id: customer.id, name: customer.name, procoreId: null }
+  }, SCOUT_ORIGIN);
+  const status = document.getElementById('submit-status');
+  status.textContent += ' Closing this window…';
+  setTimeout(() => { try { window.close(); } catch (e) {} }, 1200);
+}
+
+function reportErrorToOpener(message) {
+  if (!window.opener) return;
+  window.opener.postMessage({ source: 'einbau-intake', type: 'INTAKE_ERROR', message }, SCOUT_ORIGIN);
+}
+
+// ---------- standalone success / reset ----------
+
+function showStandaloneSuccess(name, id) {
+  document.getElementById('success-name').textContent = name;
+  document.getElementById('success-id').textContent = id;
+  document.getElementById('success-card').style.display = 'block';
+}
+
+function resetForAnother() {
+  document.getElementById('intake-email').value = '';
+  document.getElementById('c-name').value = '';
+  document.getElementById('c-street').value = '';
+  document.getElementById('c-city').value = '';
+  document.getElementById('c-province').value = '';
+  document.getElementById('c-postal').value = '';
+  document.getElementById('c-country').value = 'Canada';
+  document.getElementById('c-phone').value = '';
+  document.getElementById('c-website').value = '';
+  clearContacts();
+  addContactRow();
+  pendingAttachment = null;
+  document.getElementById('attachment-input').value = '';
+  document.getElementById('attachment-name').textContent = '';
+  hideSignatureHint();
+  document.getElementById('dup-warning').style.display = 'none';
+  document.getElementById('parse-status').textContent = '';
+  document.getElementById('submit-status').textContent = '';
+  document.getElementById('success-card').style.display = 'none';
+}
+</script>
+</body>
+</html>
