@@ -211,8 +211,9 @@
   <div class="card">
     <div class="card-header"><span class="card-title">Company</span></div>
     <div id="stage-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
-      <label>Stage</label>
+      <label>Stage <span class="field-req">*</span></label>
       <select id="c-stage" onchange="updateSubmitButtonLabel()">
+        <option value="" disabled>Select stage…</option>
         <option value="LEAD">Lead</option>
         <option value="PROSPECT">Prospect</option>
         <option value="CUSTOMER" selected>Customer</option>
@@ -293,7 +294,14 @@ function init() {
   // SCOUT is specifically for bid-ready RFQs, so a popout-created company is
   // always a real Customer — the Lead/Prospect choice only makes sense when
   // someone (e.g. the CR Manager) is adding a company earlier in the funnel.
-  if (!isPopoutMode) document.getElementById('stage-field-wrap').style.display = 'flex';
+  if (!isPopoutMode) {
+    document.getElementById('stage-field-wrap').style.display = 'flex';
+    // No default in standalone — force a deliberate choice rather than letting
+    // "Customer" slip by unnoticed (popout mode never touches this field, so
+    // its HTML default of CUSTOMER stands, unaffected by this reset).
+    document.getElementById('c-stage').value = '';
+    updateSubmitButtonLabel();
+  }
   if (isPopoutMode) {
     document.getElementById('popout-banner').style.display = 'flex';
     window.addEventListener('message', handleParentMessage);
@@ -546,6 +554,9 @@ function pickCompanyEmail(contacts) {
 // All values below come from Claude's parse of an externally-sent email — always
 // assign via .value/.textContent, never innerHTML, so a crafted email can't inject
 // markup into a page holding a live session token.
+// Deliberately does NOT set c-stage (Lead/Prospect/Customer) — Claude's parse
+// schema has no field for it, and it must stay that way. It's a judgment call
+// only the person submitting should make, not something to infer from an email.
 function populateCompanyFields(company) {
   if (company.name) document.getElementById('c-name').value = company.name;
   if (company.street) document.getElementById('c-street').value = company.street;
@@ -687,8 +698,9 @@ function renderResultRow(id, label, status, errorMsg, retryHandler) {
 function updateSubmitButtonLabel() {
   const btn = document.getElementById('submit-btn');
   if (btn.disabled) return; // already submitted successfully — don't relabel a locked button
-  const stageLabel = { LEAD: 'lead', PROSPECT: 'prospect', CUSTOMER: 'customer' }[document.getElementById('c-stage').value] || 'customer';
-  btn.textContent = `Create ${stageLabel}`;
+  const stageValue = document.getElementById('c-stage').value;
+  const stageLabel = { LEAD: 'lead', PROSPECT: 'prospect', CUSTOMER: 'customer' }[stageValue];
+  btn.textContent = stageLabel ? `Create ${stageLabel}` : 'Create company';
 }
 
 function buildCustomerPayload() {
@@ -743,6 +755,10 @@ function buildCustomerPayload() {
 async function submitIntake() {
   const name = document.getElementById('c-name').value.trim();
   if (!name) { alert('Company name is required.'); return; }
+  if (!isPopoutMode && !document.getElementById('c-stage').value) {
+    alert('Select a stage (Lead, Prospect, or Customer) before continuing.');
+    return;
+  }
 
   document.getElementById('submit-results').style.display = 'flex';
   document.getElementById('submit-results').innerHTML = '';
@@ -850,7 +866,7 @@ function showStandaloneSuccess(name, id) {
 function resetForAnother() {
   document.getElementById('intake-email').value = '';
   document.getElementById('c-name').value = '';
-  document.getElementById('c-stage').value = 'CUSTOMER';
+  document.getElementById('c-stage').value = ''; // force a deliberate choice each time, not just on first load
   document.getElementById('c-email').value = '';
   document.getElementById('c-street').value = '';
   document.getElementById('c-city').value = '';
@@ -874,7 +890,8 @@ function resetForAnother() {
   createdCustomerId = null;
   const submitBtn = document.getElementById('submit-btn');
   submitBtn.disabled = false;
-  submitBtn.textContent = 'Create customer';
+  submitBtn.textContent = isPopoutMode ? 'Create customer' : 'Create company';
+  if (!isPopoutMode) updateSubmitButtonLabel();
 }
 </script>
 </body>
