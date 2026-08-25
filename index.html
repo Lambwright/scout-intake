@@ -211,13 +211,8 @@
   <div class="card">
     <div class="card-header"><span class="card-title">Company</span></div>
     <div id="stage-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
-      <label>Stage <span class="field-req">*</span></label>
-      <select id="c-stage" onchange="updateSubmitButtonLabel()">
-        <option value="" disabled>Select stage…</option>
-        <option value="LEAD">Lead</option>
-        <option value="PROSPECT">Prospect</option>
-        <option value="CUSTOMER" selected>Customer</option>
-      </select>
+      <label>Status <span class="field-req">*</span></label>
+      <select id="c-status" onchange="updateSubmitButtonLabel()"></select>
     </div>
     <div class="field-grid">
       <div class="field"><label>Company name <span class="field-req">*</span></label><input type="text" id="c-name" onblur="checkDuplicateName()"></div>
@@ -280,6 +275,28 @@ const COUNTRIES = [
   ['ZA', 'South Africa'], ['KR', 'South Korea']
 ];
 
+// NetSuite customerstatus records for this account, grouped by their actual
+// stage — confirmed live via SuiteQL (SELECT id, name, stage FROM customerstatus)
+// on 2026-08-21. `stage` on the customer record is derived from whichever of
+// these you assign to entitystatus; it is not itself a writable field.
+const STATUSES = [
+  { id: '6', name: 'Unqualified', stage: 'LEAD' },
+  { id: '7', name: 'Qualified', stage: 'LEAD' },
+  { id: '22', name: 'Estimating Queue', stage: 'PROSPECT' },
+  { id: '9', name: 'Identified Decision Makers', stage: 'PROSPECT' },
+  { id: '8', name: 'In Discussion', stage: 'PROSPECT' },
+  { id: '11', name: 'In Negotiation', stage: 'PROSPECT' },
+  { id: '10', name: 'Proposal', stage: 'PROSPECT' },
+  { id: '12', name: 'Purchasing', stage: 'PROSPECT' },
+  { id: '14', name: 'Closed Lost', stage: 'PROSPECT' },
+  { id: '21', name: 'Declined', stage: 'PROSPECT' },
+  { id: '23', name: 'Requesting Quotes', stage: 'CUSTOMER' },
+  { id: '13', name: 'Closed Won', stage: 'CUSTOMER' },
+  { id: '15', name: 'Renewal', stage: 'CUSTOMER' },
+  { id: '16', name: 'Lost Customer', stage: 'CUSTOMER' }
+];
+const STAGE_LABELS = { LEAD: 'Lead', PROSPECT: 'Prospect', CUSTOMER: 'Customer' };
+
 let authToken = null;
 let currentUser = null;
 let isPopoutMode = false;
@@ -290,16 +307,14 @@ document.addEventListener('DOMContentLoaded', init);
 
 function init() {
   populateCountrySelect();
+  populateStatusSelect(); // always starts on the blank placeholder — see populateStatusSelect
   isPopoutMode = new URLSearchParams(location.search).get('mode') === 'popout';
   // SCOUT is specifically for bid-ready RFQs, so a popout-created company is
-  // always a real Customer — the Lead/Prospect choice only makes sense when
-  // someone (e.g. the CR Manager) is adding a company earlier in the funnel.
+  // always a real Customer (handled directly in buildCustomerPayload) — the
+  // specific-status picker only makes sense when someone (e.g. the CR Manager)
+  // is adding a company earlier in the funnel via the standalone app.
   if (!isPopoutMode) {
     document.getElementById('stage-field-wrap').style.display = 'flex';
-    // No default in standalone — force a deliberate choice rather than letting
-    // "Customer" slip by unnoticed (popout mode never touches this field, so
-    // its HTML default of CUSTOMER stands, unaffected by this reset).
-    document.getElementById('c-stage').value = '';
     updateSubmitButtonLabel();
   }
   if (isPopoutMode) {
@@ -522,6 +537,20 @@ function populateCountrySelect() {
   sel.value = 'CA';
 }
 
+function populateStatusSelect() {
+  const sel = document.getElementById('c-status');
+  const groups = ['LEAD', 'PROSPECT', 'CUSTOMER'].map(stage => {
+    const opts = STATUSES.filter(s => s.stage === stage)
+      .map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    return `<optgroup label="${STAGE_LABELS[stage]}">${opts}</optgroup>`;
+  }).join('');
+  sel.innerHTML = `<option value="" disabled selected>Select status…</option>${groups}`;
+}
+
+function getStatusById(id) {
+  return STATUSES.find(s => s.id === id) || null;
+}
+
 // Claude returns a free-text country name (e.g. "Italy") — NetSuite's address
 // field needs one of its own country codes, not free text. Matches by name,
 // falls back to code if Claude happened to return one, else leaves the default.
@@ -554,9 +583,10 @@ function pickCompanyEmail(contacts) {
 // All values below come from Claude's parse of an externally-sent email — always
 // assign via .value/.textContent, never innerHTML, so a crafted email can't inject
 // markup into a page holding a live session token.
-// Deliberately does NOT set c-stage (Lead/Prospect/Customer) — Claude's parse
-// schema has no field for it, and it must stay that way. It's a judgment call
-// only the person submitting should make, not something to infer from an email.
+// Deliberately does NOT set c-status (the Lead/Prospect/Customer status picker)
+// — Claude's parse schema has no field for it, and it must stay that way. It's
+// a judgment call only the person submitting should make, not something to
+// infer from an email.
 function populateCompanyFields(company) {
   if (company.name) document.getElementById('c-name').value = company.name;
   if (company.street) document.getElementById('c-street').value = company.street;
@@ -698,37 +728,43 @@ function renderResultRow(id, label, status, errorMsg, retryHandler) {
 function updateSubmitButtonLabel() {
   const btn = document.getElementById('submit-btn');
   if (btn.disabled) return; // already submitted successfully — don't relabel a locked button
-  const stageValue = document.getElementById('c-stage').value;
-  const stageLabel = { LEAD: 'lead', PROSPECT: 'prospect', CUSTOMER: 'customer' }[stageValue];
-  btn.textContent = stageLabel ? `Create ${stageLabel}` : 'Create company';
+  const status = getStatusById(document.getElementById('c-status').value);
+  btn.textContent = status ? `Create ${STAGE_LABELS[status.stage].toLowerCase()}` : 'Create company';
 }
 
 function buildCustomerPayload() {
   const name = document.getElementById('c-name').value.trim();
-  // Popout mode never shows the stage field, so this reads the default value
-  // ('CUSTOMER') from the (hidden) select — SCOUT-created companies are always
-  // real customers, per how the field is scoped in init().
-  const stage = document.getElementById('c-stage').value;
-
   const payload = { companyname: name, isPerson: false, subsidiary: { id: '2' }, isinactive: false };
 
-  if (stage === 'CUSTOMER') {
-    // Required for this customer to sync into Procore via the existing NetSuite
-    // automation. custentity_r_it_pc_companies is multi-select — confirmed
-    // 2026-08-19 by a live 400 on the single-select {id} shape. The export
-    // checkbox's real field id is custentity_hrc_pci_EXPORTTOPC (double-T) —
-    // confirmed by inspecting a real customer record; custentity_hrc_pci_exportopc
-    // (single-T) silently does nothing since NetSuite ignores unknown field names
-    // on write instead of erroring, unlike a genuinely invalid value.
+  if (isPopoutMode) {
+    // SCOUT is for bid-ready RFQs — always a real customer. This is the exact,
+    // already-tested behavior from before the status picker existed: don't set
+    // entitystatus at all, let the "Einbau - Customer" form's own default apply
+    // (confirmed live to land as Customer and sync to Procore correctly) —
+    // deliberately not touching a proven path just to make it consistent.
+    //
+    // custentity_r_it_pc_companies is multi-select — confirmed 2026-08-19 by a
+    // live 400 on the single-select {id} shape. The export checkbox's real
+    // field id is custentity_hrc_pci_EXPORTTOPC (double-T) — confirmed by
+    // inspecting a real customer record; custentity_hrc_pci_exportopc
+    // (single-T) silently does nothing since NetSuite ignores unknown field
+    // names on write instead of erroring, unlike a genuinely invalid value.
     payload.custentity_hrc_pci_exporttopc = true;
     payload.custentity_r_it_pc_companies = { items: [{ id: PC_COMPANY_ID }] };
   } else {
-    // Lead/Prospect: confirmed via a real existing Lead record that these never
-    // carry the Procore-export fields — only actual Customers sync to Procore.
-    // stage isn't set at all for the Customer case above because that's the
-    // form's own default (confirmed empirically) and we don't want to touch an
-    // already-working path unnecessarily.
-    payload.stage = stage;
+    // Standalone: the user picked a specific NetSuite status explicitly.
+    // `stage` on the customer record is derived from entitystatus, not
+    // independently settable — confirmed live (setting `stage` directly was
+    // silently ignored, which is why every standalone entry was landing as
+    // Customer regardless of what was picked).
+    const status = getStatusById(document.getElementById('c-status').value);
+    if (status) {
+      payload.entitystatus = { id: status.id };
+      if (status.stage === 'CUSTOMER') {
+        payload.custentity_hrc_pci_exporttopc = true;
+        payload.custentity_r_it_pc_companies = { items: [{ id: PC_COMPANY_ID }] };
+      }
+    }
   }
   const phone = document.getElementById('c-phone').value.trim();
   const email = document.getElementById('c-email').value.trim();
@@ -755,8 +791,8 @@ function buildCustomerPayload() {
 async function submitIntake() {
   const name = document.getElementById('c-name').value.trim();
   if (!name) { alert('Company name is required.'); return; }
-  if (!isPopoutMode && !document.getElementById('c-stage').value) {
-    alert('Select a stage (Lead, Prospect, or Customer) before continuing.');
+  if (!isPopoutMode && !document.getElementById('c-status').value) {
+    alert('Select a status before continuing.');
     return;
   }
 
@@ -791,8 +827,10 @@ async function attemptCreateCompany() {
   }
 
   createdCustomerId = id;
-  const stageLabel = { LEAD: 'Lead', PROSPECT: 'Prospect', CUSTOMER: 'Customer' }[document.getElementById('c-stage').value] || 'Customer';
-  renderResultRow('company', `${stageLabel} — "${name}" (NetSuite ID ${id})`, 'success');
+  const createdStatus = isPopoutMode ? null : getStatusById(document.getElementById('c-status').value);
+  const stageLabel = createdStatus ? STAGE_LABELS[createdStatus.stage] : 'Customer';
+  const statusSuffix = createdStatus ? ` (${createdStatus.name})` : '';
+  renderResultRow('company', `${stageLabel}${statusSuffix} — "${name}" (NetSuite ID ${id})`, 'success');
   btn.textContent = `✓ ${stageLabel} created`;
   // Deliberately left disabled from here on — the company now exists, so a second
   // click on this button would create a duplicate. Contact-level retries below
@@ -866,7 +904,7 @@ function showStandaloneSuccess(name, id) {
 function resetForAnother() {
   document.getElementById('intake-email').value = '';
   document.getElementById('c-name').value = '';
-  document.getElementById('c-stage').value = ''; // force a deliberate choice each time, not just on first load
+  document.getElementById('c-status').value = ''; // force a deliberate choice each time, not just on first load
   document.getElementById('c-email').value = '';
   document.getElementById('c-street').value = '';
   document.getElementById('c-city').value = '';
