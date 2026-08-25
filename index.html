@@ -210,6 +210,14 @@
 
   <div class="card">
     <div class="card-header"><span class="card-title">Company</span></div>
+    <div id="stage-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
+      <label>Stage</label>
+      <select id="c-stage" onchange="updateSubmitButtonLabel()">
+        <option value="LEAD">Lead</option>
+        <option value="PROSPECT">Prospect</option>
+        <option value="CUSTOMER" selected>Customer</option>
+      </select>
+    </div>
     <div class="field-grid">
       <div class="field"><label>Company name <span class="field-req">*</span></label><input type="text" id="c-name" onblur="checkDuplicateName()"></div>
       <div class="field"><label>Company email</label><input type="email" id="c-email" placeholder="Used for statements/dunning letters"></div>
@@ -282,6 +290,10 @@ document.addEventListener('DOMContentLoaded', init);
 function init() {
   populateCountrySelect();
   isPopoutMode = new URLSearchParams(location.search).get('mode') === 'popout';
+  // SCOUT is specifically for bid-ready RFQs, so a popout-created company is
+  // always a real Customer — the Lead/Prospect choice only makes sense when
+  // someone (e.g. the CR Manager) is adding a company earlier in the funnel.
+  if (!isPopoutMode) document.getElementById('stage-field-wrap').style.display = 'flex';
   if (isPopoutMode) {
     document.getElementById('popout-banner').style.display = 'flex';
     window.addEventListener('message', handleParentMessage);
@@ -672,10 +684,23 @@ function renderResultRow(id, label, status, errorMsg, retryHandler) {
   }
 }
 
+function updateSubmitButtonLabel() {
+  const btn = document.getElementById('submit-btn');
+  if (btn.disabled) return; // already submitted successfully — don't relabel a locked button
+  const stageLabel = { LEAD: 'lead', PROSPECT: 'prospect', CUSTOMER: 'customer' }[document.getElementById('c-stage').value] || 'customer';
+  btn.textContent = `Create ${stageLabel}`;
+}
+
 function buildCustomerPayload() {
   const name = document.getElementById('c-name').value.trim();
-  const payload = {
-    companyname: name, isPerson: false, subsidiary: { id: '2' }, isinactive: false,
+  // Popout mode never shows the stage field, so this reads the default value
+  // ('CUSTOMER') from the (hidden) select — SCOUT-created companies are always
+  // real customers, per how the field is scoped in init().
+  const stage = document.getElementById('c-stage').value;
+
+  const payload = { companyname: name, isPerson: false, subsidiary: { id: '2' }, isinactive: false };
+
+  if (stage === 'CUSTOMER') {
     // Required for this customer to sync into Procore via the existing NetSuite
     // automation. custentity_r_it_pc_companies is multi-select — confirmed
     // 2026-08-19 by a live 400 on the single-select {id} shape. The export
@@ -683,9 +708,16 @@ function buildCustomerPayload() {
     // confirmed by inspecting a real customer record; custentity_hrc_pci_exportopc
     // (single-T) silently does nothing since NetSuite ignores unknown field names
     // on write instead of erroring, unlike a genuinely invalid value.
-    custentity_hrc_pci_exporttopc: true,
-    custentity_r_it_pc_companies: { items: [{ id: PC_COMPANY_ID }] }
-  };
+    payload.custentity_hrc_pci_exporttopc = true;
+    payload.custentity_r_it_pc_companies = { items: [{ id: PC_COMPANY_ID }] };
+  } else {
+    // Lead/Prospect: confirmed via a real existing Lead record that these never
+    // carry the Procore-export fields — only actual Customers sync to Procore.
+    // stage isn't set at all for the Customer case above because that's the
+    // form's own default (confirmed empirically) and we don't want to touch an
+    // already-working path unnecessarily.
+    payload.stage = stage;
+  }
   const phone = document.getElementById('c-phone').value.trim();
   const email = document.getElementById('c-email').value.trim();
   let website = document.getElementById('c-website').value.trim();
@@ -743,8 +775,9 @@ async function attemptCreateCompany() {
   }
 
   createdCustomerId = id;
-  renderResultRow('company', `Company — "${name}" (NetSuite ID ${id})`, 'success');
-  btn.textContent = '✓ Customer created';
+  const stageLabel = { LEAD: 'Lead', PROSPECT: 'Prospect', CUSTOMER: 'Customer' }[document.getElementById('c-stage').value] || 'Customer';
+  renderResultRow('company', `${stageLabel} — "${name}" (NetSuite ID ${id})`, 'success');
+  btn.textContent = `✓ ${stageLabel} created`;
   // Deliberately left disabled from here on — the company now exists, so a second
   // click on this button would create a duplicate. Contact-level retries below
   // use their own per-row buttons instead.
@@ -817,6 +850,7 @@ function showStandaloneSuccess(name, id) {
 function resetForAnother() {
   document.getElementById('intake-email').value = '';
   document.getElementById('c-name').value = '';
+  document.getElementById('c-stage').value = 'CUSTOMER';
   document.getElementById('c-email').value = '';
   document.getElementById('c-street').value = '';
   document.getElementById('c-city').value = '';
