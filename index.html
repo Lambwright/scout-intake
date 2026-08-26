@@ -344,17 +344,22 @@ let createdCustomerId = null;
 let entityType = 'company'; // 'company' | 'vendor' — standalone only, always 'company' in popout mode
 
 // Shared across PUNCH/SCOUT/INTAKE. PUNCH is Ben's personal tool (punch-worker
-// checks the logged-in username, not just that a session is valid), so it's
-// listed here but not linked — visible, not reachable.
-const APP_SWITCHER_LINKS = [
-  { name: 'PUNCH', url: null, comingSoon: true },
-  { name: 'SCOUT', url: 'https://lambwright.github.io/scout-addin/app.html' },
-  { name: 'INTAKE', url: 'https://lambwright.github.io/scout-intake/', current: true },
-];
+// checks the logged-in username, not just that a session is valid) — everyone
+// else sees it greyed out, but for Ben himself it's a real link, same as the
+// other two. Re-run once login state is known (initial render can't tell yet).
+const PUNCH_OWNER_USERNAME = 'ben';
+function appSwitcherLinks() {
+  const isOwner = currentUser && currentUser.username === PUNCH_OWNER_USERNAME;
+  return [
+    { name: 'PUNCH', url: 'https://lambwright.github.io/PUNCH/', comingSoon: !isOwner },
+    { name: 'SCOUT', url: 'https://lambwright.github.io/scout-addin/app.html' },
+    { name: 'INTAKE', url: 'https://lambwright.github.io/scout-intake/', current: true },
+  ];
+}
 function initAppSwitcher() {
   const menu = document.getElementById('app-switcher-menu');
   if (!menu) return;
-  menu.innerHTML = APP_SWITCHER_LINKS.map(app => {
+  menu.innerHTML = appSwitcherLinks().map(app => {
     if (app.comingSoon) {
       return `<div class="app-switcher-item disabled">${app.name}<span class="app-switcher-soon">COMING SOON</span></div>`;
     }
@@ -468,6 +473,7 @@ function showApp() {
   document.getElementById('screen-app').style.display = 'block';
   document.getElementById('user-badge').style.display = 'flex';
   document.getElementById('current-user-name').textContent = currentUser ? currentUser.displayName : '';
+  initAppSwitcher(); // re-render now that we know who's logged in — affects the PUNCH link
   if (!document.querySelector('#contacts-list .contact-row')) addContactRow();
 }
 
