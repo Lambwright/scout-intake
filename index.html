@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>INTAKE — Einbau New Company</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --green: #8FC742;
@@ -103,6 +106,16 @@
     .btn-ghost { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border-input); }
     .btn-ghost:hover { color: var(--text-primary); border-color: var(--text-tertiary); }
 
+    .app-switcher { position: relative; cursor: pointer; }
+    .app-switcher-caret { font-size: 9px; margin-left: 4px; color: var(--text-tertiary); }
+    .app-switcher-menu { position: absolute; top: 100%; left: 0; margin-top: 8px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); min-width: 170px; box-shadow: var(--shadow-md); z-index: 300; overflow: hidden; }
+    .app-switcher-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-decoration: none; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); }
+    .app-switcher-item:last-child { border-bottom: none; }
+    .app-switcher-item:hover { background: var(--bg-page); }
+    .app-switcher-item.current { color: var(--green); background: rgba(143,199,66,0.08); }
+    .app-switcher-item.disabled { color: var(--text-tertiary); cursor: default; }
+    .app-switcher-soon { font-size: 9px; font-weight: 400; color: var(--text-tertiary); }
+
     .status-msg { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
     .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--border-color); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -153,9 +166,10 @@
 <header class="header">
   <img src="https://lambwright.github.io/scout-addin/logo.png" alt="Einbau" class="header-logo">
   <div class="header-divider"></div>
-  <div class="header-badge">
-    <span class="header-badge-name">INTAKE</span>
+  <div class="header-badge app-switcher" id="app-switcher-trigger" onclick="toggleAppSwitcher(event)">
+    <span class="header-badge-name">INTAKE<span class="app-switcher-caret">▾</span></span>
     <span class="header-badge-sub">NEW COMPANY</span>
+    <div id="app-switcher-menu" class="app-switcher-menu" style="display:none;"></div>
   </div>
   <div id="user-badge" style="margin-left:auto;display:none;align-items:center;gap:12px;">
     <span id="current-user-name" style="font-size:11px;color:rgba(255,255,255,0.6);"></span>
@@ -329,12 +343,38 @@ let pendingAttachment = null;
 let createdCustomerId = null;
 let entityType = 'company'; // 'company' | 'vendor' — standalone only, always 'company' in popout mode
 
+// Shared across PUNCH/SCOUT/INTAKE. PUNCH is Ben's personal tool (punch-worker
+// checks the logged-in username, not just that a session is valid), so it's
+// listed here but not linked — visible, not reachable.
+const APP_SWITCHER_LINKS = [
+  { name: 'PUNCH', url: null, comingSoon: true },
+  { name: 'SCOUT', url: 'https://lambwright.github.io/scout-addin/app.html' },
+  { name: 'INTAKE', url: 'https://lambwright.github.io/scout-intake/', current: true },
+];
+function initAppSwitcher() {
+  const menu = document.getElementById('app-switcher-menu');
+  if (!menu) return;
+  menu.innerHTML = APP_SWITCHER_LINKS.map(app => {
+    if (app.comingSoon) {
+      return `<div class="app-switcher-item disabled">${app.name}<span class="app-switcher-soon">COMING SOON</span></div>`;
+    }
+    return `<a class="app-switcher-item${app.current ? ' current' : ''}" href="${app.url}">${app.name}</a>`;
+  }).join('');
+  document.addEventListener('click', () => { menu.style.display = 'none'; });
+}
+function toggleAppSwitcher(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('app-switcher-menu');
+  menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+}
+
 document.addEventListener('DOMContentLoaded', init);
 
 function init() {
   populateCountrySelect();
   populateStatusSelect(); // always starts on the blank placeholder — see populateStatusSelect
   populateVendorCategorySelect();
+  initAppSwitcher();
   isPopoutMode = new URLSearchParams(location.search).get('mode') === 'popout';
   // SCOUT is specifically for bid-ready RFQs, so a popout-created company is
   // always a real Customer (handled directly in buildCustomerPayload) — the
@@ -345,6 +385,12 @@ function init() {
     document.getElementById('entity-type-field-wrap').style.display = 'flex';
     document.getElementById('stage-field-wrap').style.display = 'flex';
     onEntityTypeChange(); // syncs card title/name label/submit button to the default ('company') selection
+  }
+  // A popout exists to hand data back to SCOUT and close itself — navigating
+  // away via the switcher would abandon that handoff, so it doesn't show here.
+  if (isPopoutMode) {
+    document.getElementById('app-switcher-trigger').onclick = null;
+    document.getElementById('app-switcher-trigger').style.cursor = 'default';
   }
   if (isPopoutMode) {
     document.getElementById('popout-banner').style.display = 'flex';
