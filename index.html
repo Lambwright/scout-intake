@@ -523,7 +523,7 @@ async function parseEmail() {
 
   try {
     const res = await fetch(SCOUT_WORKER_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ messages: [{ role: 'user', content }] })
     });
     const data = await res.json();
@@ -704,7 +704,7 @@ async function checkDuplicateName() {
   const table = entityType === 'vendor' ? 'vendor' : 'customer';
   try {
     const res = await fetch(NETSUITE_WORKER_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
         data: { q: `SELECT id, companyname FROM ${table} WHERE UPPER(companyname) LIKE UPPER('%${escapeSql(name)}%') AND isinactive = 'F'` } })
     });
@@ -721,7 +721,7 @@ async function checkDuplicateName() {
 async function postToNetsuite(path, data) {
   try {
     const res = await fetch(NETSUITE_WORKER_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ method: 'POST', path, data })
     });
     const body = await res.json().catch(() => null);
@@ -743,7 +743,7 @@ async function postToNetsuite(path, data) {
 async function findEntityIdByExactName(name, table) {
   try {
     const res = await fetch(NETSUITE_WORKER_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
         data: { q: `SELECT id FROM ${table} WHERE companyname = '${escapeSql(name)}' ORDER BY id DESC` } })
     });
@@ -1015,7 +1015,7 @@ function isCurrentEntityProcoreEligible() {
 
 async function findProcoreVendorIdForEntity(nsEntityId) {
   const res = await fetch(NETSUITE_WORKER_URL, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
     body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
       data: { q: `SELECT custrecord_r_it_entity_pc_id FROM customrecord_r_it_entity_pc_ids WHERE custrecord_r_it_entity_record = '${nsEntityId}'` } })
   });
