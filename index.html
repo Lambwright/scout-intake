@@ -213,8 +213,8 @@
     <div id="entity-type-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
       <label>What are you adding?</label>
       <select id="entity-type" onchange="onEntityTypeChange()">
-        <option value="company">Company (Lead / Prospect / Customer)</option>
-        <option value="vendor">Vendor (a supplier or sub Einbau pays)</option>
+        <option value="company">Lead / Prospect / Customer</option>
+        <option value="vendor">Vendor</option>
       </select>
     </div>
     <div id="stage-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
@@ -274,6 +274,7 @@ const PC_COMPANY_ID = '1';
 
 // Einbau's own Procore company id — same one SCOUT posts Company Users to.
 const PROCORE_COMPANY_ID = '562949953508586';
+const PROCORE_WORKER_URL = 'https://procore.ben-a90.workers.dev';
 
 // NetSuite vendorcategory records — confirmed live via SuiteQL
 // (SELECT id, name FROM vendorcategory) on 2026-08-25. Only 4 exist; optional
@@ -343,7 +344,7 @@ function init() {
   if (!isPopoutMode) {
     document.getElementById('entity-type-field-wrap').style.display = 'flex';
     document.getElementById('stage-field-wrap').style.display = 'flex';
-    updateSubmitButtonLabel();
+    onEntityTypeChange(); // syncs card title/name label/submit button to the default ('company') selection
   }
   if (isPopoutMode) {
     document.getElementById('popout-banner').style.display = 'flex';
@@ -590,10 +591,10 @@ function onEntityTypeChange() {
   const isVendor = entityType === 'vendor';
   document.getElementById('stage-field-wrap').style.display = isVendor ? 'none' : 'flex';
   document.getElementById('vendor-category-field-wrap').style.display = isVendor ? 'flex' : 'none';
-  document.getElementById('entity-card-title').textContent = isVendor ? 'Vendor' : 'Company';
+  document.getElementById('entity-card-title').textContent = isVendor ? 'Vendor' : 'Lead / Prospect / Customer';
   document.getElementById('c-name-label').innerHTML = isVendor
     ? 'Vendor name <span class="field-req">*</span>'
-    : 'Company name <span class="field-req">*</span>';
+    : 'Name <span class="field-req">*</span>';
   updateSubmitButtonLabel();
 }
 
@@ -781,7 +782,7 @@ function updateSubmitButtonLabel() {
   if (btn.disabled) return; // already submitted successfully — don't relabel a locked button
   if (entityType === 'vendor') { btn.textContent = 'Create vendor'; return; }
   const status = getStatusById(document.getElementById('c-status').value);
-  btn.textContent = status ? `Create ${STAGE_LABELS[status.stage].toLowerCase()}` : 'Create company';
+  btn.textContent = status ? `Create ${STAGE_LABELS[status.stage].toLowerCase()}` : 'Select a status…';
 }
 
 function buildCustomerPayload() {
@@ -894,13 +895,15 @@ async function submitIntake() {
 async function attemptCreateCompany() {
   const btn = document.getElementById('submit-btn');
   const name = document.getElementById('c-name').value.trim();
+  const pendingStatus = isPopoutMode ? null : getStatusById(document.getElementById('c-status').value);
+  const pendingLabel = pendingStatus ? STAGE_LABELS[pendingStatus.stage] : 'Customer';
   btn.disabled = true;
-  renderResultRow('company', `Company — "${name}"`, 'pending');
+  renderResultRow('company', `${pendingLabel} — "${name}"`, 'pending');
 
   const result = await postToNetsuite('/customer', buildCustomerPayload());
 
   if (!result.ok) {
-    renderResultRow('company', `Company — "${name}"`, 'error', result.error, retryCompany);
+    renderResultRow('company', `${pendingLabel} — "${name}"`, 'error', result.error, retryCompany);
     btn.disabled = false;
     if (isPopoutMode) reportErrorToOpener(`Failed to create customer: ${result.error}`);
     return;
@@ -909,24 +912,22 @@ async function attemptCreateCompany() {
   let id = result.id;
   if (!id) id = await findEntityIdByExactName(name, 'customer');
   if (!id) {
-    renderResultRow('company', `Company — "${name}"`, 'error', 'Created but no ID could be confirmed — check NetSuite before retrying, to avoid a duplicate.', retryCompany);
+    renderResultRow('company', `${pendingLabel} — "${name}"`, 'error', 'Created but no ID could be confirmed — check NetSuite before retrying, to avoid a duplicate.', retryCompany);
     btn.disabled = false;
     if (isPopoutMode) reportErrorToOpener('Customer created but ID could not be confirmed — check NetSuite before retrying.');
     return;
   }
 
   createdCustomerId = id;
-  const createdStatus = isPopoutMode ? null : getStatusById(document.getElementById('c-status').value);
-  const stageLabel = createdStatus ? STAGE_LABELS[createdStatus.stage] : 'Customer';
-  const statusSuffix = createdStatus ? ` (${createdStatus.name})` : '';
-  renderResultRow('company', `${stageLabel}${statusSuffix} — "${name}" (NetSuite ID ${id})`, 'success');
-  btn.textContent = `✓ ${stageLabel} created`;
+  const statusSuffix = pendingStatus ? ` (${pendingStatus.name})` : '';
+  renderResultRow('company', `${pendingLabel}${statusSuffix} — "${name}" (NetSuite ID ${id})`, 'success');
+  btn.textContent = `✓ ${pendingLabel} created`;
   // Deliberately left disabled from here on — the company now exists, so a second
   // click on this button would create a duplicate. Contact-level retries below
   // use their own per-row buttons instead.
 
   if (isPopoutMode) reportSuccessToOpener({ id, name });
-  else showStandaloneSuccess('Company', name, id);
+  else showStandaloneSuccess(pendingLabel, name, id);
 
   attemptCreateAllContacts();
 }
@@ -986,6 +987,7 @@ async function attemptCreateContact(index, data) {
   const result = await postToNetsuite('/contact', payload);
   if (result.ok) {
     renderResultRow(`contact-${index}`, `Contact — ${label}`, 'success');
+    if (result.id) await syncContactToProcore(index, result.id, data, label);
   } else {
     renderResultRow(`contact-${index}`, `Contact — ${label}`, 'error', result.error, () => retryContact(index));
   }
@@ -995,6 +997,105 @@ function retryContact(index) {
   const data = collectContacts()[index];
   if (!data) return;
   attemptCreateContact(index, data);
+}
+
+// ---------- Procore contact sync (fills the same gap SCOUT's own contact-adder
+// does in app.html, via the same customrecord_r_it_entity_pc_ids linking record
+// and the same /companies/{id}/users v1.3 endpoint) — a stand-in for Rabb-IT's
+// eventual NetSuite-side automation, which doesn't sync individual Contacts yet.
+// Applies to every contact created through INTAKE, standalone or via the SCOUT
+// popout, since both funnel through attemptCreateContact above.
+
+function isCurrentEntityProcoreEligible() {
+  if (isPopoutMode) return true; // SCOUT always creates a real Customer
+  if (entityType === 'vendor') return true; // vendors always export, per Ben
+  const status = getStatusById(document.getElementById('c-status').value);
+  return !!status && status.stage === 'CUSTOMER';
+}
+
+async function findProcoreVendorIdForEntity(nsEntityId) {
+  const res = await fetch(NETSUITE_WORKER_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
+      data: { q: `SELECT custrecord_r_it_entity_pc_id FROM customrecord_r_it_entity_pc_ids WHERE custrecord_r_it_entity_record = '${nsEntityId}'` } })
+  });
+  const data = await res.json();
+  const item = data.items && data.items[0];
+  return item ? String(item.custrecord_r_it_entity_pc_id) : null;
+}
+
+async function syncContactToProcore(index, nsContactId, data, label) {
+  const rowId = `procore-contact-${index}`;
+  const retry = () => syncContactToProcore(index, nsContactId, data, label);
+  renderResultRow(rowId, `Procore sync — ${label}`, 'pending');
+
+  let vendorId;
+  try {
+    vendorId = await findProcoreVendorIdForEntity(createdCustomerId);
+  } catch (e) {
+    renderResultRow(rowId, `Procore sync — ${label}`, 'error', `Could not check Procore link: ${e.message}`, retry);
+    return;
+  }
+  if (!vendorId) {
+    const eligible = isCurrentEntityProcoreEligible();
+    const msg = eligible
+      ? "No Procore link on file yet for this record — NetSuite's own sync may not have caught up. Try again in a bit."
+      : "Not synced — Leads/Prospects aren't exported to Procore, only Customers and Vendors.";
+    renderResultRow(rowId, `Procore sync — ${label}`, 'error', msg, eligible ? retry : null);
+    return;
+  }
+
+  const userPayload = {
+    last_name: data.lname || data.fname || 'Unknown',
+    first_name: data.fname || '',
+    email_address: data.email || undefined,
+    business_phone: data.phone || undefined,
+    job_title: data.title || undefined,
+    is_active: true,
+    is_employee: false,
+    vendor_id: Number(vendorId)
+  };
+
+  let pcBody;
+  try {
+    const pcRes = await fetch(PROCORE_WORKER_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        method: 'POST', version: 'v1.3',
+        path: `/companies/${PROCORE_COMPANY_ID}/users`,
+        data: { user: userPayload }
+      })
+    });
+    pcBody = await pcRes.json().catch(() => null);
+  } catch (e) {
+    renderResultRow(rowId, `Procore sync — ${label}`, 'error', 'Network error', retry);
+    return;
+  }
+  if (!pcBody || !pcBody.id) {
+    const detail = pcBody && (pcBody.errors ? JSON.stringify(pcBody.errors) : pcBody.error || pcBody.message);
+    renderResultRow(rowId, `Procore sync — ${label}`, 'error', detail || 'Unknown error', retry);
+    return;
+  }
+
+  const procoreUserId = String(pcBody.id);
+  const partyId = pcBody.party_id != null ? String(pcBody.party_id) : '';
+
+  const writeBack = await postToNetsuite('/customrecord_r_it_entity_pc_ids', {
+    custrecord_r_it_entity_pc_id: procoreUserId,
+    custrecord_r_it_entity_record: { id: nsContactId },
+    custrecord_r_it_epid_uid: procoreUserId,
+    custrecord_r_it_epid_pid: partyId,
+    custrecord_r_it_pc_company: { id: PC_COMPANY_ID },
+    custrecord_r_it_link: `https://us02.procore.com/company/directory/users/${procoreUserId}`
+  });
+
+  if (writeBack.ok) {
+    renderResultRow(rowId, `Procore sync — ${label} (user id ${procoreUserId})`, 'success');
+  } else {
+    // Deliberately no retry here — the Procore user already exists, so retrying
+    // would create a duplicate. NetSuite-side link is a nice-to-have, not blocking.
+    renderResultRow(rowId, `Procore sync — ${label}`, 'error', `Synced but linking back to NetSuite failed: ${writeBack.error}`, null);
+  }
 }
 
 // ---------- popout messaging ----------
@@ -1055,7 +1156,7 @@ function resetForAnother() {
   createdCustomerId = null;
   const submitBtn = document.getElementById('submit-btn');
   submitBtn.disabled = false;
-  submitBtn.textContent = isPopoutMode ? 'Create customer' : 'Create company';
+  submitBtn.textContent = 'Create customer'; // overwritten below for standalone
   if (!isPopoutMode) updateSubmitButtonLabel();
 }
 </script>
