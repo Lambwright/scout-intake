@@ -209,13 +209,24 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><span class="card-title">Company</span></div>
+    <div class="card-header"><span class="card-title" id="entity-card-title">Company</span></div>
+    <div id="entity-type-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
+      <label>What are you adding?</label>
+      <select id="entity-type" onchange="onEntityTypeChange()">
+        <option value="company">Company (Lead / Prospect / Customer)</option>
+        <option value="vendor">Vendor (a supplier or sub Einbau pays)</option>
+      </select>
+    </div>
     <div id="stage-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
       <label>Status <span class="field-req">*</span></label>
       <select id="c-status" onchange="updateSubmitButtonLabel()"></select>
     </div>
+    <div id="vendor-category-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
+      <label>Vendor category</label>
+      <select id="v-category"></select>
+    </div>
     <div class="field-grid">
-      <div class="field"><label>Company name <span class="field-req">*</span></label><input type="text" id="c-name" onblur="checkDuplicateName()"></div>
+      <div class="field"><label id="c-name-label">Company name <span class="field-req">*</span></label><input type="text" id="c-name" onblur="checkDuplicateName()"></div>
       <div class="field"><label>Company email</label><input type="email" id="c-email" placeholder="Used for statements/dunning letters"></div>
       <div class="field"><label>Phone</label><input type="tel" id="c-phone"></div>
       <div class="field"><label>Website</label><input type="text" id="c-website" placeholder="e.g. example.com"></div>
@@ -242,7 +253,7 @@
     </div>
     <div id="submit-results" class="submit-results" style="display:none;"></div>
     <div id="success-card" class="success-card">
-      <div style="font-size:14px;font-weight:600;margin-bottom:6px;">✓ Customer created</div>
+      <div id="success-title" style="font-size:14px;font-weight:600;margin-bottom:6px;">✓ Customer created</div>
       <div style="font-size:12px;color:var(--text-secondary);">"<span id="success-name"></span>" — NetSuite ID <span id="success-id"></span></div>
       <button class="btn btn-ghost" style="margin-top:14px;" onclick="resetForAnother()">Create another</button>
     </div>
@@ -260,6 +271,19 @@ const SCOUT_ORIGIN = 'https://lambwright.github.io';
 // export mapping) — confirmed via NetSuite UI. custentity_r_it_pc_companies is a
 // multi-select field (confirmed live: the single-select {id} shape 400'd).
 const PC_COMPANY_ID = '1';
+
+// Einbau's own Procore company id — same one SCOUT posts Company Users to.
+const PROCORE_COMPANY_ID = '562949953508586';
+
+// NetSuite vendorcategory records — confirmed live via SuiteQL
+// (SELECT id, name FROM vendorcategory) on 2026-08-25. Only 4 exist; optional
+// on create, so a blank "no category" option is included.
+const VENDOR_CATEGORIES = [
+  { id: '2', name: 'Consultant' },
+  { id: '4', name: 'Supplies' },
+  { id: '1', name: 'T5018 contractor' },
+  { id: '3', name: 'Tax agency' }
+];
 
 // NetSuite's address "country" field expects one of its own country codes, which
 // match ISO 3166-1 alpha-2 for the countries Einbau is likely to deal with. Free
@@ -302,18 +326,22 @@ let currentUser = null;
 let isPopoutMode = false;
 let pendingAttachment = null;
 let createdCustomerId = null;
+let entityType = 'company'; // 'company' | 'vendor' — standalone only, always 'company' in popout mode
 
 document.addEventListener('DOMContentLoaded', init);
 
 function init() {
   populateCountrySelect();
   populateStatusSelect(); // always starts on the blank placeholder — see populateStatusSelect
+  populateVendorCategorySelect();
   isPopoutMode = new URLSearchParams(location.search).get('mode') === 'popout';
   // SCOUT is specifically for bid-ready RFQs, so a popout-created company is
   // always a real Customer (handled directly in buildCustomerPayload) — the
-  // specific-status picker only makes sense when someone (e.g. the CR Manager)
-  // is adding a company earlier in the funnel via the standalone app.
+  // specific-status picker, and the Vendor option entirely, only make sense
+  // when someone is adding a record earlier/outside the bid funnel via the
+  // standalone app.
   if (!isPopoutMode) {
+    document.getElementById('entity-type-field-wrap').style.display = 'flex';
     document.getElementById('stage-field-wrap').style.display = 'flex';
     updateSubmitButtonLabel();
   }
@@ -547,6 +575,28 @@ function populateStatusSelect() {
   sel.innerHTML = `<option value="" disabled selected>Select status…</option>${groups}`;
 }
 
+function populateVendorCategorySelect() {
+  const sel = document.getElementById('v-category');
+  const opts = VENDOR_CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  sel.innerHTML = `<option value="">No category</option>${opts}`;
+}
+
+// Standalone only (gated by entity-type-field-wrap's display, itself gated by
+// !isPopoutMode) — toggles which fields apply and relabels the form. Vendors
+// skip the Lead/Prospect/Customer status picker entirely (not applicable) and
+// get their own optional category field instead.
+function onEntityTypeChange() {
+  entityType = document.getElementById('entity-type').value;
+  const isVendor = entityType === 'vendor';
+  document.getElementById('stage-field-wrap').style.display = isVendor ? 'none' : 'flex';
+  document.getElementById('vendor-category-field-wrap').style.display = isVendor ? 'flex' : 'none';
+  document.getElementById('entity-card-title').textContent = isVendor ? 'Vendor' : 'Company';
+  document.getElementById('c-name-label').innerHTML = isVendor
+    ? 'Vendor name <span class="field-req">*</span>'
+    : 'Company name <span class="field-req">*</span>';
+  updateSubmitButtonLabel();
+}
+
 function getStatusById(id) {
   return STATUSES.find(s => s.id === id) || null;
 }
@@ -650,11 +700,12 @@ async function checkDuplicateName() {
   const warnEl = document.getElementById('dup-warning');
   warnEl.style.display = 'none';
   if (!name || name.length < 3) return;
+  const table = entityType === 'vendor' ? 'vendor' : 'customer';
   try {
     const res = await fetch(NETSUITE_WORKER_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
-        data: { q: `SELECT id, companyname FROM customer WHERE UPPER(companyname) LIKE UPPER('%${escapeSql(name)}%') AND isinactive = 'F'` } })
+        data: { q: `SELECT id, companyname FROM ${table} WHERE UPPER(companyname) LIKE UPPER('%${escapeSql(name)}%') AND isinactive = 'F'` } })
     });
     const data = await res.json();
     if (data.items && data.items.length) {
@@ -688,12 +739,12 @@ async function postToNetsuite(path, data) {
   }
 }
 
-async function findCustomerIdByExactName(name) {
+async function findEntityIdByExactName(name, table) {
   try {
     const res = await fetch(NETSUITE_WORKER_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
-        data: { q: `SELECT id FROM customer WHERE companyname = '${escapeSql(name)}' ORDER BY id DESC` } })
+        data: { q: `SELECT id FROM ${table} WHERE companyname = '${escapeSql(name)}' ORDER BY id DESC` } })
     });
     const data = await res.json();
     return data.items && data.items[0] ? String(data.items[0].id) : null;
@@ -728,6 +779,7 @@ function renderResultRow(id, label, status, errorMsg, retryHandler) {
 function updateSubmitButtonLabel() {
   const btn = document.getElementById('submit-btn');
   if (btn.disabled) return; // already submitted successfully — don't relabel a locked button
+  if (entityType === 'vendor') { btn.textContent = 'Create vendor'; return; }
   const status = getStatusById(document.getElementById('c-status').value);
   btn.textContent = status ? `Create ${STAGE_LABELS[status.stage].toLowerCase()}` : 'Create company';
 }
@@ -788,10 +840,46 @@ function buildCustomerPayload() {
   return payload;
 }
 
+// Vendors (standalone only — not available from the SCOUT popout, since those
+// are always bid-ready Customers). Per Ben: vendors export to Procore the same
+// way Customers do — Rabb-IT's existing NetSuite-side automation watches these
+// same two fields and creates the corresponding Procore Company Vendor, so this
+// always sets them rather than making export conditional on anything.
+function buildVendorPayload() {
+  const name = document.getElementById('c-name').value.trim();
+  const payload = { companyname: name, isPerson: false, subsidiary: { id: '2' }, isinactive: false };
+  payload.custentity_hrc_pci_exporttopc = true;
+  payload.custentity_r_it_pc_companies = { items: [{ id: PC_COMPANY_ID }] };
+
+  const categoryId = document.getElementById('v-category').value;
+  if (categoryId) payload.category = { id: categoryId };
+
+  const phone = document.getElementById('c-phone').value.trim();
+  const email = document.getElementById('c-email').value.trim();
+  let website = document.getElementById('c-website').value.trim();
+  if (website && !/^https?:\/\//i.test(website)) website = 'https://' + website;
+  if (phone) payload.phone = phone;
+  if (email) payload.email = email;
+  if (website) payload.url = website;
+
+  const street = document.getElementById('c-street').value.trim();
+  const city = document.getElementById('c-city').value.trim();
+  const province = document.getElementById('c-province').value.trim();
+  const postal = document.getElementById('c-postal').value.trim();
+  const country = document.getElementById('c-country').value;
+  if (street || city || province || postal) {
+    payload.addressbook = { items: [{
+      defaultShipping: true, defaultBilling: true,
+      addressbookaddress: { addr1: street, city, state: province, zip: postal, country: country || 'CA' }
+    }] };
+  }
+  return payload;
+}
+
 async function submitIntake() {
   const name = document.getElementById('c-name').value.trim();
-  if (!name) { alert('Company name is required.'); return; }
-  if (!isPopoutMode && !document.getElementById('c-status').value) {
+  if (!name) { alert(entityType === 'vendor' ? 'Vendor name is required.' : 'Company name is required.'); return; }
+  if (!isPopoutMode && entityType !== 'vendor' && !document.getElementById('c-status').value) {
     alert('Select a status before continuing.');
     return;
   }
@@ -799,7 +887,8 @@ async function submitIntake() {
   document.getElementById('submit-results').style.display = 'flex';
   document.getElementById('submit-results').innerHTML = '';
   createdCustomerId = null;
-  await attemptCreateCompany();
+  if (entityType === 'vendor') await attemptCreateVendor();
+  else await attemptCreateCompany();
 }
 
 async function attemptCreateCompany() {
@@ -818,7 +907,7 @@ async function attemptCreateCompany() {
   }
 
   let id = result.id;
-  if (!id) id = await findCustomerIdByExactName(name);
+  if (!id) id = await findEntityIdByExactName(name, 'customer');
   if (!id) {
     renderResultRow('company', `Company — "${name}"`, 'error', 'Created but no ID could be confirmed — check NetSuite before retrying, to avoid a duplicate.', retryCompany);
     btn.disabled = false;
@@ -837,12 +926,44 @@ async function attemptCreateCompany() {
   // use their own per-row buttons instead.
 
   if (isPopoutMode) reportSuccessToOpener({ id, name });
-  else showStandaloneSuccess(name, id);
+  else showStandaloneSuccess('Company', name, id);
 
   attemptCreateAllContacts();
 }
 
 function retryCompany() { attemptCreateCompany(); }
+
+async function attemptCreateVendor() {
+  const btn = document.getElementById('submit-btn');
+  const name = document.getElementById('c-name').value.trim();
+  btn.disabled = true;
+  renderResultRow('company', `Vendor — "${name}"`, 'pending');
+
+  const result = await postToNetsuite('/vendor', buildVendorPayload());
+
+  if (!result.ok) {
+    renderResultRow('company', `Vendor — "${name}"`, 'error', result.error, retryVendor);
+    btn.disabled = false;
+    return;
+  }
+
+  let id = result.id;
+  if (!id) id = await findEntityIdByExactName(name, 'vendor');
+  if (!id) {
+    renderResultRow('company', `Vendor — "${name}"`, 'error', 'Created but no ID could be confirmed — check NetSuite before retrying, to avoid a duplicate.', retryVendor);
+    btn.disabled = false;
+    return;
+  }
+
+  createdCustomerId = id; // reused generically as "parent entity id for contacts" below
+  renderResultRow('company', `Vendor — "${name}" (NetSuite ID ${id})`, 'success');
+  btn.textContent = '✓ Vendor created';
+  showStandaloneSuccess('Vendor', name, id);
+
+  attemptCreateAllContacts();
+}
+
+function retryVendor() { attemptCreateVendor(); }
 
 async function attemptCreateAllContacts() {
   const contacts = collectContacts();
@@ -895,7 +1016,8 @@ function reportErrorToOpener(message) {
 
 // ---------- standalone success / reset ----------
 
-function showStandaloneSuccess(name, id) {
+function showStandaloneSuccess(typeLabel, name, id) {
+  document.getElementById('success-title').textContent = `✓ ${typeLabel} created`;
   document.getElementById('success-name').textContent = name;
   document.getElementById('success-id').textContent = id;
   document.getElementById('success-card').style.display = 'block';
@@ -905,6 +1027,11 @@ function resetForAnother() {
   document.getElementById('intake-email').value = '';
   document.getElementById('c-name').value = '';
   document.getElementById('c-status').value = ''; // force a deliberate choice each time, not just on first load
+  document.getElementById('v-category').value = '';
+  if (!isPopoutMode) {
+    document.getElementById('entity-type').value = 'company';
+    onEntityTypeChange();
+  }
   document.getElementById('c-email').value = '';
   document.getElementById('c-street').value = '';
   document.getElementById('c-city').value = '';
