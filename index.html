@@ -72,11 +72,11 @@
     html { scroll-behavior: smooth; }
     body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: var(--text-primary); background: var(--bg-page); min-height: 100vh; -webkit-font-smoothing: antialiased; }
 
-    .header { background: var(--bg-header); padding: 0 24px; display: flex; align-items: center; height: 56px; position: sticky; top: 0; z-index: 200; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .header { background: var(--bg-header); padding: 0 24px; display: flex; align-items: center; height: 68px; position: sticky; top: 0; z-index: 200; border-bottom: 1px solid rgba(255,255,255,0.06); }
     .header-divider { width: 1px; height: 24px; background: rgba(255,255,255,0.15); margin: 0 16px; }
     .header-badge { display: flex; flex-direction: column; }
-    .header-badge-name { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--green); line-height: 1; }
-    .header-badge-sub { font-size: 10px; color: rgba(255,255,255,0.4); letter-spacing: 0.06em; margin-top: 2px; }
+    .header-badge-name { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 30px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-primary); line-height: 1; }
+    .header-badge-sub { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-top: 3px; }
     .header-logo { height: 32px; }
 
     .container { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
@@ -169,10 +169,8 @@
 <body>
 
 <header class="header">
-  <img src="https://lambwright.github.io/scout-addin/logo.png" alt="Einbau" class="header-logo">
-  <div class="header-divider"></div>
   <div class="header-badge app-switcher" id="app-switcher-trigger" onclick="toggleAppSwitcher(event)">
-    <span class="header-badge-name">INTAKE<span class="app-switcher-caret">▾</span></span>
+    <span class="header-badge-name">Intake<span class="app-switcher-caret">▾</span></span>
     <span class="header-badge-sub">NEW COMPANY</span>
     <div id="app-switcher-menu" class="app-switcher-menu" style="display:none;"></div>
   </div>
@@ -209,9 +207,13 @@
     <label class="parse-label">Paste RFQ email content</label>
     <textarea id="intake-email" class="parse-textarea" placeholder="Paste the email here…"></textarea>
     <div class="parse-controls">
-      <button id="parse-btn" class="btn btn-green" onclick="parseEmail()">✦ Parse with Claude</button>
+      <button id="parse-btn" class="btn btn-green" onclick="parseEmail()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M9 13v2"/><path d="M15 13v2"/></svg>
+        Parse with Claude
+      </button>
       <label class="btn btn-ghost" style="cursor:pointer;">
-        📎 Attach screenshot/PDF
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        Attach screenshot/PDF
         <input type="file" id="attachment-input" accept="image/*,application/pdf" style="display:none;" onchange="handleAttachment(this)">
       </label>
       <span id="attachment-name" style="font-size:11px;color:var(--text-tertiary);"></span>
@@ -429,7 +431,7 @@ async function handleParentMessage(event) {
   const result = token ? await verifySession(token) : { valid: false };
   if (result.valid) {
     authToken = result.refreshedToken || token;
-    sessionStorage.setItem('einbau_intake_token', authToken);
+    sessionStorage.setItem('einbau_id_token', authToken);
     currentUser = result.user;
     const emailField = document.getElementById('intake-email');
     if (event.data.rfqEmailText && !emailField.value) emailField.value = event.data.rfqEmailText;
@@ -441,17 +443,17 @@ async function handleParentMessage(event) {
 
 async function attemptStandaloneSession() {
   if (authToken) return;
-  const stored = (isPopoutMode ? sessionStorage : localStorage).getItem('einbau_intake_token');
+  const stored = (isPopoutMode ? sessionStorage : localStorage).getItem('einbau_id_token');
   if (stored) {
     const result = await verifySession(stored);
     if (result.valid) {
       authToken = result.refreshedToken || stored;
-      (isPopoutMode ? sessionStorage : localStorage).setItem('einbau_intake_token', authToken);
+      (isPopoutMode ? sessionStorage : localStorage).setItem('einbau_id_token', authToken);
       currentUser = result.user;
       showApp();
       return;
     }
-    (isPopoutMode ? sessionStorage : localStorage).removeItem('einbau_intake_token');
+    (isPopoutMode ? sessionStorage : localStorage).removeItem('einbau_id_token');
   }
   showLogin();
 }
@@ -503,7 +505,7 @@ async function doLogin(e) {
     }
     authToken = data.token;
     currentUser = data.user;
-    localStorage.setItem('einbau_intake_token', data.token);
+    localStorage.setItem('einbau_id_token', data.token);
     showApp();
   } catch (err) {
     errEl.textContent = 'Could not reach the login server — check your connection.';
@@ -513,8 +515,8 @@ async function doLogin(e) {
 
 function doLogout() {
   authToken = null; currentUser = null;
-  localStorage.removeItem('einbau_intake_token');
-  sessionStorage.removeItem('einbau_intake_token');
+  localStorage.removeItem('einbau_id_token');
+  sessionStorage.removeItem('einbau_id_token');
   showLogin();
 }
 
