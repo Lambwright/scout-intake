@@ -121,6 +121,12 @@
     .app-switcher-item.disabled { color: var(--text-tertiary); cursor: default; }
     .app-switcher-soon { font-size: 9px; font-weight: 400; color: var(--text-tertiary); }
 
+    /* Entity tabs - was a dropdown, moved up top like PUNCH's INBOX/PORTFOLIO/etc bar */
+    .entity-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .entity-tab { padding: 6px 14px; background: transparent; color: var(--text-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.15s; }
+    .entity-tab:hover { color: var(--text-primary); border-color: var(--text-tertiary); }
+    .entity-tab.active { background: var(--green); color: #fff; border-color: var(--green); }
+
     .status-msg { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
     .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--border-color); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -203,6 +209,13 @@
 
 <div id="screen-app" class="container" style="display:none;">
 
+  <div id="entity-tabs-wrap" class="entity-tabs" style="display:none;">
+    <button class="entity-tab" data-tab="LEAD" onclick="selectEntityTab('LEAD')">Lead</button>
+    <button class="entity-tab" data-tab="PROSPECT" onclick="selectEntityTab('PROSPECT')">Prospect</button>
+    <button class="entity-tab" data-tab="CUSTOMER" onclick="selectEntityTab('CUSTOMER')">Customer</button>
+    <button class="entity-tab" data-tab="vendor" onclick="selectEntityTab('vendor')">Vendor</button>
+  </div>
+
   <div class="parse-card">
     <label class="parse-label">Paste RFQ email content</label>
     <textarea id="intake-email" class="parse-textarea" placeholder="Paste the email here…"></textarea>
@@ -231,13 +244,6 @@
 
   <div class="card">
     <div class="card-header"><span class="card-title" id="entity-card-title">Company</span></div>
-    <div id="entity-type-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
-      <label>What are you adding?</label>
-      <select id="entity-type" onchange="onEntityTypeChange()">
-        <option value="company">Lead / Prospect / Customer</option>
-        <option value="vendor">Vendor</option>
-      </select>
-    </div>
     <div id="stage-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
       <label>Status <span class="field-req">*</span></label>
       <select id="c-status" onchange="updateSubmitButtonLabel()"></select>
@@ -349,6 +355,7 @@ let isPopoutMode = false;
 let pendingAttachment = null;
 let createdCustomerId = null;
 let entityType = 'company'; // 'company' | 'vendor' — standalone only, always 'company' in popout mode
+let selectedStageTier = null; // 'LEAD' | 'PROSPECT' | 'CUSTOMER' | null — null until a tab is picked, or in vendor mode
 
 // Shared across PUNCH/SCOUT/INTAKE. PUNCH is Ben's personal tool (punch-worker
 // checks the logged-in username, not just that a session is valid) — everyone
@@ -394,9 +401,10 @@ function init() {
   // when someone is adding a record earlier/outside the bid funnel via the
   // standalone app.
   if (!isPopoutMode) {
-    document.getElementById('entity-type-field-wrap').style.display = 'flex';
+    document.getElementById('entity-tabs-wrap').style.display = 'flex';
     document.getElementById('stage-field-wrap').style.display = 'flex';
-    onEntityTypeChange(); // syncs card title/name label/submit button to the default ('company') selection
+    // No tab pre-selected - same "force a deliberate choice" philosophy the
+    // status dropdown already had, just one level up now.
   }
   // A popout exists to hand data back to SCOUT and close itself — navigating
   // away via the switcher would abandon that handoff, so it doesn't show here.
@@ -625,9 +633,15 @@ function populateCountrySelect() {
   sel.value = 'CA';
 }
 
+// Narrowed to the picked tab's tier once one's been clicked (Lead has 2 real
+// statuses, Prospect has 8, Customer has 4 - too many genuinely different
+// options within Prospect/Customer to collapse away, so the tab narrows the
+// list rather than picking a value for you). Shows everything, grouped, until
+// a tab's been picked (matches the original dropdown's full list).
 function populateStatusSelect() {
   const sel = document.getElementById('c-status');
-  const groups = ['LEAD', 'PROSPECT', 'CUSTOMER'].map(stage => {
+  const stages = selectedStageTier ? [selectedStageTier] : ['LEAD', 'PROSPECT', 'CUSTOMER'];
+  const groups = stages.map(stage => {
     const opts = STATUSES.filter(s => s.stage === stage)
       .map(s => `<option value="${s.id}">${s.name}</option>`).join('');
     return `<optgroup label="${STAGE_LABELS[stage]}">${opts}</optgroup>`;
@@ -641,19 +655,22 @@ function populateVendorCategorySelect() {
   sel.innerHTML = `<option value="">No category</option>${opts}`;
 }
 
-// Standalone only (gated by entity-type-field-wrap's display, itself gated by
+// Standalone only (gated by entity-tabs-wrap's display, itself gated by
 // !isPopoutMode) — toggles which fields apply and relabels the form. Vendors
 // skip the Lead/Prospect/Customer status picker entirely (not applicable) and
 // get their own optional category field instead.
-function onEntityTypeChange() {
-  entityType = document.getElementById('entity-type').value;
+function selectEntityTab(tab) {
+  entityType = tab === 'vendor' ? 'vendor' : 'company';
+  selectedStageTier = tab === 'vendor' ? null : tab;
+  document.querySelectorAll('.entity-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   const isVendor = entityType === 'vendor';
   document.getElementById('stage-field-wrap').style.display = isVendor ? 'none' : 'flex';
   document.getElementById('vendor-category-field-wrap').style.display = isVendor ? 'flex' : 'none';
-  document.getElementById('entity-card-title').textContent = isVendor ? 'Vendor' : 'Lead / Prospect / Customer';
+  document.getElementById('entity-card-title').textContent = isVendor ? 'Vendor' : STAGE_LABELS[tab];
   document.getElementById('c-name-label').innerHTML = isVendor
     ? 'Vendor name <span class="field-req">*</span>'
     : 'Name <span class="field-req">*</span>';
+  populateStatusSelect();
   updateSubmitButtonLabel();
 }
 
@@ -1189,8 +1206,14 @@ function resetForAnother() {
   document.getElementById('c-status').value = ''; // force a deliberate choice each time, not just on first load
   document.getElementById('v-category').value = '';
   if (!isPopoutMode) {
-    document.getElementById('entity-type').value = 'company';
-    onEntityTypeChange();
+    entityType = 'company';
+    selectedStageTier = null;
+    document.querySelectorAll('.entity-tab').forEach(el => el.classList.remove('active'));
+    document.getElementById('stage-field-wrap').style.display = 'flex';
+    document.getElementById('vendor-category-field-wrap').style.display = 'none';
+    document.getElementById('entity-card-title').textContent = 'Company';
+    document.getElementById('c-name-label').innerHTML = 'Name <span class="field-req">*</span>';
+    populateStatusSelect();
   }
   document.getElementById('c-email').value = '';
   document.getElementById('c-street').value = '';
