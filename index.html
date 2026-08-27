@@ -124,8 +124,13 @@
 
     /* Entity tabs - was a dropdown, moved up top like PUNCH's INBOX/PORTFOLIO/etc bar */
     .entity-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-    .entity-tab { padding: 6px 14px; background: transparent; color: var(--text-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.15s; }
-    .entity-tab:hover { color: var(--text-primary); border-color: var(--text-tertiary); }
+    /* Resting state uses --green (not --text-tertiary/--border-color) deliberately -
+       those dim tones are exactly what a disabled field looks like elsewhere on this
+       page, and before a tab's picked, everything else genuinely IS disabled. Without
+       real color contrast here the pulsing aura alone wasn't enough to read as "this
+       one's actually clickable" against a page that looks uniformly greyed-out. */
+    .entity-tab { padding: 6px 14px; background: transparent; color: var(--green); border: 1px solid var(--green); border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.15s; }
+    .entity-tab:hover { background: rgba(143,199,66,0.15); color: var(--text-primary); }
     .entity-tab.active { background: var(--green); color: #fff; border-color: var(--green); }
     /* Draws the eye here on load, since nothing else on the page works until
        one of these is picked - clears the moment a tab is clicked. */
