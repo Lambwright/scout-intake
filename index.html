@@ -72,11 +72,12 @@
     html { scroll-behavior: smooth; }
     body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: var(--text-primary); background: var(--bg-page); min-height: 100vh; -webkit-font-smoothing: antialiased; }
 
-    .header { background: var(--bg-header); padding: 0 24px; display: flex; align-items: center; height: 68px; position: sticky; top: 0; z-index: 200; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .header { background: var(--bg-header); padding: 30px 24px 18px; display: flex; align-items: flex-start; position: sticky; top: 0; z-index: 200; border-bottom: 1px solid rgba(255,255,255,0.06); }
     .header-divider { width: 1px; height: 24px; background: rgba(255,255,255,0.15); margin: 0 16px; }
     .header-badge { display: flex; flex-direction: column; }
-    .header-badge-name { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 30px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-primary); line-height: 1; }
+    .header-badge-name { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 36px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-primary); line-height: 1; }
     .header-badge-sub { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-top: 3px; }
+    .header-brand-tag { font-family: 'Inter', sans-serif; font-size: 9px; font-style: italic; color: var(--text-tertiary); opacity: 0.5; margin-top: 2px; display: block; }
     .header-logo { height: 32px; }
 
     .container { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
@@ -126,6 +127,12 @@
     .entity-tab { padding: 6px 14px; background: transparent; color: var(--text-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.15s; }
     .entity-tab:hover { color: var(--text-primary); border-color: var(--text-tertiary); }
     .entity-tab.active { background: var(--green); color: #fff; border-color: var(--green); }
+    /* Draws the eye here on load, since nothing else on the page works until
+       one of these is picked - clears the moment a tab is clicked. */
+    .entity-tabs.needs-selection .entity-tab { animation: entityAura 1.6s ease-in-out infinite; }
+    @keyframes entityAura { 0%,100% { box-shadow: 0 0 0 0 rgba(143,199,66,0.35); } 50% { box-shadow: 0 0 10px 2px rgba(143,199,66,0.55); } }
+    #gated-form { transition: opacity 0.15s; }
+    #gated-form.locked { opacity: 0.5; }
 
     .status-msg { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
     .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--border-color); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
@@ -143,9 +150,12 @@
     /* Popout banner */
     .popout-banner { display: none; align-items: center; gap: 8px; background: var(--green-light); color: var(--green-dark); font-size: 11px; font-weight: 600; padding: 8px 16px; border-bottom: 1px solid var(--border-color); }
 
-    /* Contacts */
-    .contact-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1.3fr 1fr auto; gap: 8px; margin-bottom: 8px; align-items: center; }
-    .contact-row input { font-size: 13px; padding: 8px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); font-family: inherit; }
+    /* Contacts - minmax(0, Nfr), not bare Nfr: grid tracks otherwise refuse to
+       shrink past their content's natural width (implicit min-width:auto),
+       which is exactly what was pushing Phone/the remove button outside the
+       card's own padding. */
+    .contact-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.2fr) minmax(0,0.9fr) minmax(0,0.5fr) auto; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .contact-row input { min-width: 0; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); font-family: inherit; }
     .contact-row input:focus { outline: none; border-color: var(--green); background: var(--bg-card); box-shadow: 0 0 0 3px rgba(143,199,66,0.12); }
     .btn-remove-contact { background: none; border: 1px solid var(--border-input); border-radius: var(--radius-sm); color: var(--text-tertiary); width: 30px; height: 30px; cursor: pointer; font-size: 16px; line-height: 1; }
     .btn-remove-contact:hover { color: var(--red); border-color: var(--red-border); }
@@ -178,6 +188,7 @@
   <div class="header-badge app-switcher" id="app-switcher-trigger" onclick="toggleAppSwitcher(event)">
     <span class="header-badge-name">Intake<span class="app-switcher-caret">▾</span></span>
     <span class="header-badge-sub">NEW COMPANY</span>
+    <span class="header-brand-tag">An Einbau Product</span>
     <div id="app-switcher-menu" class="app-switcher-menu" style="display:none;"></div>
   </div>
   <div id="user-badge" style="margin-left:auto;display:none;align-items:center;gap:12px;">
@@ -216,6 +227,7 @@
     <button class="entity-tab" data-tab="vendor" onclick="selectEntityTab('vendor')">Vendor</button>
   </div>
 
+  <div id="gated-form">
   <div class="parse-card">
     <label class="parse-label">Paste RFQ email content</label>
     <textarea id="intake-email" class="parse-textarea" placeholder="Paste the email here…"></textarea>
@@ -284,6 +296,11 @@
       <div style="font-size:12px;color:var(--text-secondary);">"<span id="success-name"></span>" — NetSuite ID <span id="success-id"></span></div>
       <button class="btn btn-ghost" style="margin-top:14px;" onclick="resetForAnother()">Create another</button>
     </div>
+  </div>
+  </div><!-- gated-form -->
+
+  <div style="text-align:center;padding:40px 0 10px;pointer-events:none;">
+    <img src="https://lambwright.github.io/scout-addin/logo.png" alt="" style="height:80px;opacity:0.1;-webkit-mask-image:linear-gradient(to bottom, black, transparent);mask-image:linear-gradient(to bottom, black, transparent);">
   </div>
 
 </div>
@@ -490,6 +507,31 @@ function showApp() {
   document.getElementById('current-user-name').textContent = currentUser ? currentUser.displayName : '';
   initAppSwitcher(); // re-render now that we know who's logged in — affects the PUNCH link
   if (!document.querySelector('#contacts-list .contact-row')) addContactRow();
+  // Popout mode skips the tabs entirely (entity type's implied - always a
+  // Customer, per SCOUT's own flow) so nothing needs gating there.
+  if (!isPopoutMode) lockGatedForm();
+}
+
+// Nothing below the tabs works until one's picked - every field gets a real
+// disabled state (not just dimmed) plus a tooltip explaining why, and the
+// tabs themselves get a pulsing glow to draw the eye there first.
+function lockGatedForm() {
+  const form = document.getElementById('gated-form');
+  form.classList.add('locked');
+  form.querySelectorAll('input, select, textarea, button').forEach(el => {
+    el.disabled = true;
+    el.title = 'Select an entity type above first';
+  });
+  document.getElementById('entity-tabs-wrap').classList.add('needs-selection');
+}
+function unlockGatedForm() {
+  const form = document.getElementById('gated-form');
+  form.classList.remove('locked');
+  form.querySelectorAll('input, select, textarea, button').forEach(el => {
+    el.disabled = false;
+    el.title = '';
+  });
+  document.getElementById('entity-tabs-wrap').classList.remove('needs-selection');
 }
 
 async function doLogin(e) {
@@ -663,6 +705,7 @@ function selectEntityTab(tab) {
   entityType = tab === 'vendor' ? 'vendor' : 'company';
   selectedStageTier = tab === 'vendor' ? null : tab;
   document.querySelectorAll('.entity-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  unlockGatedForm();
   const isVendor = entityType === 'vendor';
   document.getElementById('stage-field-wrap').style.display = isVendor ? 'none' : 'flex';
   document.getElementById('vendor-category-field-wrap').style.display = isVendor ? 'flex' : 'none';
@@ -745,6 +788,7 @@ function addContactRow(data) {
     <input type="text" class="c-title" placeholder="Title / role">
     <input type="email" class="c-email" placeholder="Email">
     <input type="tel" class="c-phone" placeholder="Phone">
+    <input type="text" class="c-ext" placeholder="Ext.">
     <button type="button" class="btn-remove-contact" title="Remove contact">×</button>
   `;
   row.querySelector('.c-fname').value = data.fname || '';
@@ -752,6 +796,7 @@ function addContactRow(data) {
   row.querySelector('.c-title').value = data.title || '';
   row.querySelector('.c-email').value = data.email || '';
   row.querySelector('.c-phone').value = data.phone || '';
+  row.querySelector('.c-ext').value = data.ext || '';
   row.querySelector('.btn-remove-contact').addEventListener('click', () => row.remove());
   document.getElementById('contacts-list').appendChild(row);
 }
@@ -762,7 +807,8 @@ function collectContacts() {
     lname: row.querySelector('.c-lname').value.trim(),
     title: row.querySelector('.c-title').value.trim(),
     email: row.querySelector('.c-email').value.trim(),
-    phone: row.querySelector('.c-phone').value.trim()
+    phone: row.querySelector('.c-phone').value.trim(),
+    ext: row.querySelector('.c-ext').value.trim()
   })).filter(c => c.fname || c.lname || c.email);
 }
 
@@ -1059,6 +1105,10 @@ async function attemptCreateContact(index, data) {
   if (data.title) payload.title = data.title;
   if (data.email) payload.email = data.email;
   if (data.phone) payload.phone = data.phone;
+  // phoneextension is NetSuite's standard native Contact field - not yet
+  // confirmed against the live schema (would need a fresh token to verify),
+  // worth double-checking on the first real submission that includes one.
+  if (data.ext) payload.phoneextension = data.ext;
 
   const result = await postToNetsuite('/contact', payload);
   if (result.ok) {
@@ -1214,6 +1264,7 @@ function resetForAnother() {
     document.getElementById('entity-card-title').textContent = 'Company';
     document.getElementById('c-name-label').innerHTML = 'Name <span class="field-req">*</span>';
     populateStatusSelect();
+    lockGatedForm(); // force a fresh, deliberate pick for the next one too
   }
   document.getElementById('c-email').value = '';
   document.getElementById('c-street').value = '';
