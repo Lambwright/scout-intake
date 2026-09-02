@@ -264,7 +264,18 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><span class="card-title" id="entity-card-title">Company</span></div>
+    <div class="card-header">
+      <span class="card-title" id="entity-card-title">Company</span>
+      <button type="button" id="manual-existing-toggle-btn" class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="toggleManualExistingSearch()">Add to existing company instead</button>
+    </div>
+    <div id="manual-existing-search" style="display:none;margin-bottom:16px;">
+      <div class="field" style="max-width:400px;">
+        <label>Search NetSuite for an existing company</label>
+        <input type="text" id="manual-existing-input" placeholder="Start typing a company name…" oninput="onManualExistingInput()">
+      </div>
+      <div id="manual-existing-results" style="margin-top:8px;"></div>
+      <button type="button" class="btn btn-ghost" style="margin-top:8px;padding:4px 10px;font-size:11px;" onclick="toggleManualExistingSearch()">← Never mind, create a new company</button>
+    </div>
     <div id="stage-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
       <label>Status <span class="field-req">*</span></label>
       <select id="c-status" onchange="updateSubmitButtonLabel()"></select>
@@ -658,6 +669,11 @@ async function parseEmail() {
     const parsed = JSON.parse(clean);
 
     populateCompanyFields(parsed.company || {});
+    // Setting .value directly doesn't fire blur, so the duplicate check that
+    // normally runs when a human types a name and tabs away never ran for a
+    // Claude-parsed name at all — this is the actual fix for "Claude should
+    // flag it when the parsed company already exists."
+    checkDuplicateName();
     if (Array.isArray(parsed.contacts) && parsed.contacts.length) {
       clearContacts();
       parsed.contacts.forEach(c => addContactRow(c));
@@ -838,36 +854,117 @@ function escapeSql(str) {
   return String(str).replace(/'/g, "''");
 }
 
+// Strips one trailing legal-entity suffix (Inc/Ltd/LLC/Corp/Company/Co, with or
+// without a period, comma-separated or not) before matching. Without this, a
+// name Claude parsed off a signature as "Acme Millwork Ltd." would never match
+// a NetSuite record filed as plain "Acme Millwork" — the raw substring search
+// requires the shorter string to be *contained in* the longer one, which fails
+// exactly backwards when the extra word is on the typed side, not NetSuite's.
+function normalizeCompanyName(name) {
+  const stripped = String(name || '')
+    .toUpperCase()
+    .replace(/[,.]?\s*\b(INCORPORATED|INC|LIMITED|LTD|LLC|CORPORATION|CORP|COMPANY|CO)\.?\s*$/i, '')
+    .replace(/[.,]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped.length >= 2 ? stripped : String(name || '').toUpperCase().trim();
+}
+
+// Shared by the passive check (typing into the company-name field, or Claude's
+// parse filling it in) and the manual search panel — one search implementation,
+// two entry points.
+async function searchExistingCompanies(rawName, table) {
+  const name = normalizeCompanyName(rawName);
+  if (!name || name.length < 3) return [];
+  try {
+    const res = await fetch(NETSUITE_WORKER_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+      body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
+        data: { q: `SELECT id, companyname FROM ${table} WHERE UPPER(companyname) LIKE '%${escapeSql(name)}%' AND isinactive = 'F'` } })
+    });
+    const data = await res.json();
+    return data.items || [];
+  } catch (e) { return []; }
+}
+
 async function checkDuplicateName() {
   const name = document.getElementById('c-name').value.trim();
   const warnEl = document.getElementById('dup-warning');
   warnEl.style.display = 'none';
   warnEl.innerHTML = '';
   if (existingCompanyId) return; // already locked onto a match — don't re-search over it
-  if (!name || name.length < 3) return;
   const table = entityType === 'vendor' ? 'vendor' : 'customer';
-  try {
-    const res = await fetch(NETSUITE_WORKER_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
-      body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
-        data: { q: `SELECT id, companyname FROM ${table} WHERE UPPER(companyname) LIKE UPPER('%${escapeSql(name)}%') AND isinactive = 'F'` } })
+  const items = await searchExistingCompanies(name, table);
+  if (items.length) {
+    const intro = document.createElement('div');
+    intro.textContent = `⚠ Possible existing match — click one to add a contact to it instead of creating a duplicate:`;
+    warnEl.appendChild(intro);
+    items.forEach(i => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'dup-match-btn';
+      btn.textContent = i.companyname;
+      btn.onclick = () => useExistingCompany(i.id, i.companyname);
+      warnEl.appendChild(btn);
     });
-    const data = await res.json();
-    if (data.items && data.items.length) {
-      const intro = document.createElement('div');
-      intro.textContent = `⚠ Possible existing match — click one to add a contact to it instead of creating a duplicate:`;
-      warnEl.appendChild(intro);
-      data.items.forEach(i => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'dup-match-btn';
-        btn.textContent = i.companyname;
-        btn.onclick = () => useExistingCompany(i.id, i.companyname);
-        warnEl.appendChild(btn);
-      });
-      warnEl.style.display = 'block';
-    }
-  } catch (e) { /* non-blocking */ }
+    warnEl.style.display = 'block';
+  }
+}
+
+// ---------- manual "add to existing company" search ----------
+// A deliberate, always-available entry point — the passive check above only
+// ever fires off something already typed (or parsed) into the company-name
+// field, which isn't discoverable and doesn't help someone who just wants to
+// browse/search from a blank form.
+let manualExistingSearchTimer = null;
+
+function toggleManualExistingSearch() {
+  const panel = document.getElementById('manual-existing-search');
+  const opening = panel.style.display === 'none';
+  panel.style.display = opening ? 'block' : 'none';
+  document.querySelector('.field-grid').style.display = opening ? 'none' : 'grid';
+  document.getElementById('manual-existing-toggle-btn').style.display = opening ? 'none' : 'inline-flex';
+  if (opening) {
+    document.getElementById('manual-existing-input').value = '';
+    document.getElementById('manual-existing-results').innerHTML = '';
+    document.getElementById('manual-existing-input').focus();
+  } else if (existingCompanyId) {
+    clearExistingCompany();
+  }
+}
+
+function onManualExistingInput() {
+  clearTimeout(manualExistingSearchTimer);
+  manualExistingSearchTimer = setTimeout(runManualExistingSearch, 300);
+}
+
+async function runManualExistingSearch() {
+  const query = document.getElementById('manual-existing-input').value.trim();
+  const resultsEl = document.getElementById('manual-existing-results');
+  resultsEl.innerHTML = '';
+  if (query.length < 3) return;
+  const table = entityType === 'vendor' ? 'vendor' : 'customer';
+  const items = await searchExistingCompanies(query, table);
+  if (!items.length) {
+    resultsEl.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary);">No matches.</div>';
+    return;
+  }
+  items.forEach(i => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dup-match-btn';
+    btn.style.display = 'block';
+    btn.style.width = '100%';
+    btn.style.textAlign = 'left';
+    btn.style.marginTop = '4px';
+    btn.textContent = i.companyname;
+    btn.onclick = () => {
+      useExistingCompany(i.id, i.companyname);
+      resultsEl.innerHTML = '';
+      document.getElementById('manual-existing-input').value = i.companyname;
+    };
+    resultsEl.appendChild(btn);
+  });
 }
 
 // Locks the form onto a company that already exists in NetSuite instead of
