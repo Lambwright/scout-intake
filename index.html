@@ -167,6 +167,10 @@
 
     .signature-hint { display: none; align-items: flex-start; gap: 10px; background: var(--green-light); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 10px; font-size: 12px; color: var(--text-primary); width: 100%; }
     .dup-warning { display: none; background: #fef9c3; color: #92400e; border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; font-size: 12px; }
+    .dup-match-btn { display: inline-flex; align-items: center; background: transparent; border: 1px solid #92400e; color: #92400e; border-radius: var(--radius-sm); padding: 3px 8px; margin: 4px 4px 0 0; font-size: 11px; font-weight: 600; cursor: pointer; }
+    .dup-match-btn:hover { background: #92400e; color: #fef9c3; }
+    .existing-company-banner { display: none; align-items: center; justify-content: space-between; gap: 10px; background: var(--green-light); color: var(--green-dark); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; font-size: 12px; }
+    .existing-company-banner button { flex-shrink: 0; }
     .success-card { display: none; background: var(--green-light); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 20px; margin-top: 12px; text-align: center; }
 
     /* Per-item submit results / retry */
@@ -283,6 +287,10 @@
       </div>
     </div>
     <div id="dup-warning" class="dup-warning"></div>
+    <div id="existing-company-banner" class="existing-company-banner">
+      <span id="existing-company-label"></span>
+      <button type="button" class="btn btn-ghost" style="padding:3px 8px;font-size:11px;" onclick="clearExistingCompany()">Use a different company</button>
+    </div>
   </div>
 
   <div class="card">
@@ -376,6 +384,9 @@ let currentUser = null;
 let isPopoutMode = false;
 let pendingAttachment = null;
 let createdCustomerId = null;
+let existingCompanyId = null; // set when the user picks a duplicate-check match instead of creating new
+let existingCompanyName = null;
+let existingCompanyStage = null; // 'LEAD' | 'PROSPECT' | 'CUSTOMER' | null — the record's real current stage, fetched on pick (Procore-eligibility can't fall back to the local status dropdown here, since that's correctly left unset for an existing record)
 let entityType = 'company'; // 'company' | 'vendor' — standalone only, always 'company' in popout mode
 let selectedStageTier = null; // 'LEAD' | 'PROSPECT' | 'CUSTOMER' | null — null until a tab is picked, or in vendor mode
 
@@ -707,6 +718,10 @@ function populateVendorCategorySelect() {
 // skip the Lead/Prospect/Customer status picker entirely (not applicable) and
 // get their own optional category field instead.
 function selectEntityTab(tab) {
+  // A picked existing-company match belongs to whichever table (customer vs
+  // vendor) was searched under the previous tab — switching tabs changes that
+  // table, so the lock no longer means anything and has to clear.
+  if (existingCompanyId) clearExistingCompany();
   entityType = tab === 'vendor' ? 'vendor' : 'company';
   selectedStageTier = tab === 'vendor' ? null : tab;
   document.querySelectorAll('.entity-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
@@ -827,6 +842,8 @@ async function checkDuplicateName() {
   const name = document.getElementById('c-name').value.trim();
   const warnEl = document.getElementById('dup-warning');
   warnEl.style.display = 'none';
+  warnEl.innerHTML = '';
+  if (existingCompanyId) return; // already locked onto a match — don't re-search over it
   if (!name || name.length < 3) return;
   const table = entityType === 'vendor' ? 'vendor' : 'customer';
   try {
@@ -837,10 +854,70 @@ async function checkDuplicateName() {
     });
     const data = await res.json();
     if (data.items && data.items.length) {
-      warnEl.textContent = `⚠ Possible existing match: ${data.items.map(i => i.companyname).join(', ')} — double-check before creating a duplicate.`;
+      const intro = document.createElement('div');
+      intro.textContent = `⚠ Possible existing match — click one to add a contact to it instead of creating a duplicate:`;
+      warnEl.appendChild(intro);
+      data.items.forEach(i => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'dup-match-btn';
+        btn.textContent = i.companyname;
+        btn.onclick = () => useExistingCompany(i.id, i.companyname);
+        warnEl.appendChild(btn);
+      });
       warnEl.style.display = 'block';
     }
   } catch (e) { /* non-blocking */ }
+}
+
+// Locks the form onto a company that already exists in NetSuite instead of
+// creating a new one — the actual fix for "INTAKE can't add a contact to an
+// existing company." Reuses the exact-name lookup the duplicate check already
+// had; the only thing missing was a way to act on a match instead of just
+// warning about it. Company-detail fields get disabled (nothing about the
+// existing company is being changed here, only new contacts are being added
+// to it) but stay visible/filled so it's clear which company is selected.
+async function useExistingCompany(id, name) {
+  existingCompanyId = id;
+  existingCompanyName = name;
+  existingCompanyStage = null;
+  document.getElementById('dup-warning').style.display = 'none';
+  document.getElementById('c-name').value = name;
+  document.querySelectorAll('.field-grid input, .field-grid select, #c-status, #v-category').forEach(el => el.disabled = true);
+  const label = document.getElementById('existing-company-label');
+  label.textContent = `Adding contact(s) to existing ${entityType === 'vendor' ? 'vendor' : 'record'}: "${name}" (NetSuite ID ${id})`;
+  document.getElementById('existing-company-banner').style.display = 'flex';
+  updateSubmitButtonLabel();
+
+  // Procore-eligibility (isCurrentEntityProcoreEligible) needs to know this
+  // record's real current stage — it can't read the local status dropdown the
+  // way it does for a newly-created record, since that's correctly left unset
+  // here. Skipped for vendors (always eligible) and popout (SCOUT always wants
+  // a real customer either way) — neither needs this fetch at all.
+  if (entityType !== 'vendor' && !isPopoutMode) {
+    try {
+      const res = await fetch(NETSUITE_WORKER_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+        body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
+          data: { q: `SELECT entitystatus FROM customer WHERE id = '${id}'` } })
+      });
+      const data = await res.json();
+      const statusId = data.items && data.items[0] && data.items[0].entitystatus;
+      const status = statusId ? getStatusById(String(statusId)) : null;
+      existingCompanyStage = status ? status.stage : null;
+    } catch (e) { existingCompanyStage = null; }
+  }
+}
+
+function clearExistingCompany() {
+  existingCompanyId = null;
+  existingCompanyName = null;
+  existingCompanyStage = null;
+  document.getElementById('existing-company-banner').style.display = 'none';
+  document.querySelectorAll('.field-grid input, .field-grid select, #c-status, #v-category').forEach(el => el.disabled = false);
+  document.getElementById('c-name').value = '';
+  document.getElementById('c-name').focus();
+  updateSubmitButtonLabel();
 }
 
 // ---------- submit ----------
@@ -907,6 +984,7 @@ function renderResultRow(id, label, status, errorMsg, retryHandler) {
 function updateSubmitButtonLabel() {
   const btn = document.getElementById('submit-btn');
   if (btn.disabled) return; // already submitted successfully — don't relabel a locked button
+  if (existingCompanyId) { btn.textContent = `Add contact to "${existingCompanyName}"`; return; }
   if (entityType === 'vendor') { btn.textContent = 'Create vendor'; return; }
   const status = getStatusById(document.getElementById('c-status').value);
   btn.textContent = status ? `Create ${STAGE_LABELS[status.stage].toLowerCase()}` : 'Select a status…';
@@ -1007,7 +1085,7 @@ function buildVendorPayload() {
 async function submitIntake() {
   const name = document.getElementById('c-name').value.trim();
   if (!name) { alert(entityType === 'vendor' ? 'Vendor name is required.' : 'Company name is required.'); return; }
-  if (!isPopoutMode && entityType !== 'vendor' && !document.getElementById('c-status').value) {
+  if (!existingCompanyId && !isPopoutMode && entityType !== 'vendor' && !document.getElementById('c-status').value) {
     alert('Select a status before continuing.');
     return;
   }
@@ -1015,8 +1093,27 @@ async function submitIntake() {
   document.getElementById('submit-results').style.display = 'flex';
   document.getElementById('submit-results').innerHTML = '';
   createdCustomerId = null;
-  if (entityType === 'vendor') await attemptCreateVendor();
+  if (existingCompanyId) await attemptUseExistingCompany();
+  else if (entityType === 'vendor') await attemptCreateVendor();
   else await attemptCreateCompany();
+}
+
+// The "add a contact to a company that's already in NetSuite" path — no create
+// call at all, just adopts the picked id and runs the same contact-creation
+// flow attemptCreateCompany()/attemptCreateVendor() use once they have one.
+async function attemptUseExistingCompany() {
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  renderResultRow('company', `Existing record — "${existingCompanyName}"`, 'pending');
+
+  createdCustomerId = existingCompanyId;
+  renderResultRow('company', `Existing record — "${existingCompanyName}" (NetSuite ID ${existingCompanyId})`, 'success');
+  btn.textContent = '✓ Using existing record';
+
+  if (isPopoutMode) reportSuccessToOpener({ id: existingCompanyId, name: existingCompanyName });
+  else showStandaloneSuccess('Contact', existingCompanyName, existingCompanyId);
+
+  await attemptCreateAllContacts();
 }
 
 async function attemptCreateCompany() {
@@ -1140,6 +1237,7 @@ function retryContact(index) {
 function isCurrentEntityProcoreEligible() {
   if (isPopoutMode) return true; // SCOUT always creates a real Customer
   if (entityType === 'vendor') return true; // vendors always export, per Ben
+  if (existingCompanyId) return existingCompanyStage === 'CUSTOMER';
   const status = getStatusById(document.getElementById('c-status').value);
   return !!status && status.stage === 'CUSTOMER';
 }
@@ -1256,6 +1354,11 @@ function showStandaloneSuccess(typeLabel, name, id) {
 }
 
 function resetForAnother() {
+  existingCompanyId = null;
+  existingCompanyName = null;
+  existingCompanyStage = null;
+  document.getElementById('existing-company-banner').style.display = 'none';
+  document.querySelectorAll('.field-grid input, .field-grid select, #c-status, #v-category').forEach(el => el.disabled = false);
   document.getElementById('intake-email').value = '';
   document.getElementById('c-name').value = '';
   document.getElementById('c-status').value = ''; // force a deliberate choice each time, not just on first load
