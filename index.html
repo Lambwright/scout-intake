@@ -234,6 +234,7 @@
     <button class="entity-tab" data-tab="PROSPECT" onclick="selectEntityTab('PROSPECT')">Prospect</button>
     <button class="entity-tab" data-tab="CUSTOMER" onclick="selectEntityTab('CUSTOMER')">Customer</button>
     <button class="entity-tab" data-tab="vendor" onclick="selectEntityTab('vendor')">Vendor</button>
+    <button class="entity-tab" data-tab="existing" onclick="selectEntityTab('existing')">Add Contact to Existing</button>
   </div>
 
   <div id="gated-form">
@@ -266,15 +267,17 @@
   <div class="card">
     <div class="card-header">
       <span class="card-title" id="entity-card-title">Company</span>
-      <button type="button" id="manual-existing-toggle-btn" class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="toggleManualExistingSearch()">Add to existing company instead</button>
     </div>
-    <div id="manual-existing-search" style="display:none;margin-bottom:16px;">
+    <div id="manual-existing-search" style="display:none;">
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <button type="button" class="entity-tab" data-existing-table="customer" onclick="setExistingSearchTable('customer')" style="font-size:11px;padding:5px 10px;">Lead / Prospect / Customer</button>
+        <button type="button" class="entity-tab" data-existing-table="vendor" onclick="setExistingSearchTable('vendor')" style="font-size:11px;padding:5px 10px;">Vendor</button>
+      </div>
       <div class="field" style="max-width:400px;">
         <label>Search NetSuite for an existing company</label>
         <input type="text" id="manual-existing-input" placeholder="Start typing a company name…" oninput="onManualExistingInput()">
       </div>
       <div id="manual-existing-results" style="margin-top:8px;"></div>
-      <button type="button" class="btn btn-ghost" style="margin-top:8px;padding:4px 10px;font-size:11px;" onclick="toggleManualExistingSearch()">← Never mind, create a new company</button>
     </div>
     <div id="stage-field-wrap" class="field" style="display:none;margin-bottom:14px;max-width:280px;">
       <label>Status <span class="field-req">*</span></label>
@@ -734,14 +737,37 @@ function populateVendorCategorySelect() {
 // skip the Lead/Prospect/Customer status picker entirely (not applicable) and
 // get their own optional category field instead.
 function selectEntityTab(tab) {
-  // A picked existing-company match belongs to whichever table (customer vs
-  // vendor) was searched under the previous tab — switching tabs changes that
-  // table, so the lock no longer means anything and has to clear.
-  if (existingCompanyId) clearExistingCompany();
+  existingCompanyId = null;
+  existingCompanyName = null;
+  existingCompanyStage = null;
+  document.getElementById('existing-company-banner').style.display = 'none';
+  document.querySelectorAll('.entity-tab[data-tab]').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  unlockGatedForm();
+
+  const fieldGrid = document.querySelector('.field-grid');
+  const searchPanel = document.getElementById('manual-existing-search');
+
+  if (tab === 'existing') {
+    entityType = 'existing';
+    selectedStageTier = null;
+    document.getElementById('stage-field-wrap').style.display = 'none';
+    document.getElementById('vendor-category-field-wrap').style.display = 'none';
+    fieldGrid.style.display = 'none';
+    document.getElementById('dup-warning').style.display = 'none';
+    searchPanel.style.display = 'block';
+    document.getElementById('entity-card-title').textContent = 'Existing Company';
+    setExistingSearchTable('customer');
+    document.getElementById('manual-existing-input').value = '';
+    document.getElementById('manual-existing-results').innerHTML = '';
+    document.getElementById('manual-existing-input').focus();
+    updateSubmitButtonLabel();
+    return;
+  }
+
+  searchPanel.style.display = 'none';
+  fieldGrid.style.display = 'grid';
   entityType = tab === 'vendor' ? 'vendor' : 'company';
   selectedStageTier = tab === 'vendor' ? null : tab;
-  document.querySelectorAll('.entity-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
-  unlockGatedForm();
   const isVendor = entityType === 'vendor';
   document.getElementById('stage-field-wrap').style.display = isVendor ? 'none' : 'flex';
   document.getElementById('vendor-category-field-wrap').style.display = isVendor ? 'flex' : 'none';
@@ -751,6 +777,15 @@ function selectEntityTab(tab) {
     : 'Name <span class="field-req">*</span>';
   populateStatusSelect();
   updateSubmitButtonLabel();
+}
+
+let existingSearchTable = 'customer'; // 'customer' | 'vendor' — which NetSuite table the "existing" tab's search panel queries
+function setExistingSearchTable(table) {
+  existingSearchTable = table;
+  document.querySelectorAll('[data-existing-table]').forEach(el => el.classList.toggle('active', el.dataset.existingTable === table));
+  document.getElementById('manual-existing-results').innerHTML = '';
+  const input = document.getElementById('manual-existing-input');
+  if (input.value.trim().length >= 3) runManualExistingSearch();
 }
 
 function getStatusById(id) {
@@ -887,7 +922,16 @@ async function searchExistingCompanies(rawName, table) {
   } catch (e) { return []; }
 }
 
+// Guards against two overlapping calls both rendering — confirmed live as a real
+// bug: the auto-trigger after a Claude parse can land close enough to another
+// call (e.g. a stray blur) that both clear-then-append instead of the second
+// cleanly replacing the first, producing the exact "same match shown twice"
+// symptom seen in production. Each call captures its own generation number and
+// only renders if it's still the most recent one by the time its fetch resolves.
+let dupCheckGeneration = 0;
+
 async function checkDuplicateName() {
+  const myGeneration = ++dupCheckGeneration;
   const name = document.getElementById('c-name').value.trim();
   const warnEl = document.getElementById('dup-warning');
   warnEl.style.display = 'none';
@@ -895,6 +939,7 @@ async function checkDuplicateName() {
   if (existingCompanyId) return; // already locked onto a match — don't re-search over it
   const table = entityType === 'vendor' ? 'vendor' : 'customer';
   const items = await searchExistingCompanies(name, table);
+  if (myGeneration !== dupCheckGeneration) return; // a newer call superseded this one
   if (items.length) {
     const intro = document.createElement('div');
     intro.textContent = `⚠ Possible existing match — click one to add a contact to it instead of creating a duplicate:`;
@@ -915,23 +960,10 @@ async function checkDuplicateName() {
 // A deliberate, always-available entry point — the passive check above only
 // ever fires off something already typed (or parsed) into the company-name
 // field, which isn't discoverable and doesn't help someone who just wants to
-// browse/search from a blank form.
+// browse/search from a blank form. Reached via the "Add Contact to Existing"
+// top-level tab (selectEntityTab) rather than a nested toggle, so its panel is
+// shown/hidden by tab selection, not a button of its own.
 let manualExistingSearchTimer = null;
-
-function toggleManualExistingSearch() {
-  const panel = document.getElementById('manual-existing-search');
-  const opening = panel.style.display === 'none';
-  panel.style.display = opening ? 'block' : 'none';
-  document.querySelector('.field-grid').style.display = opening ? 'none' : 'grid';
-  document.getElementById('manual-existing-toggle-btn').style.display = opening ? 'none' : 'inline-flex';
-  if (opening) {
-    document.getElementById('manual-existing-input').value = '';
-    document.getElementById('manual-existing-results').innerHTML = '';
-    document.getElementById('manual-existing-input').focus();
-  } else if (existingCompanyId) {
-    clearExistingCompany();
-  }
-}
 
 function onManualExistingInput() {
   clearTimeout(manualExistingSearchTimer);
@@ -943,8 +975,7 @@ async function runManualExistingSearch() {
   const resultsEl = document.getElementById('manual-existing-results');
   resultsEl.innerHTML = '';
   if (query.length < 3) return;
-  const table = entityType === 'vendor' ? 'vendor' : 'customer';
-  const items = await searchExistingCompanies(query, table);
+  const items = await searchExistingCompanies(query, existingSearchTable);
   if (!items.length) {
     resultsEl.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary);">No matches.</div>';
     return;
@@ -969,20 +1000,34 @@ async function runManualExistingSearch() {
 
 // Locks the form onto a company that already exists in NetSuite instead of
 // creating a new one — the actual fix for "INTAKE can't add a contact to an
-// existing company." Reuses the exact-name lookup the duplicate check already
-// had; the only thing missing was a way to act on a match instead of just
-// warning about it. Company-detail fields get disabled (nothing about the
-// existing company is being changed here, only new contacts are being added
-// to it) but stay visible/filled so it's clear which company is selected.
+// existing company." Reachable two ways: picking a passive duplicate-check
+// match while on any tab, or searching directly from the "Add Contact to
+// Existing" tab. Either way, this fully collapses the company-creation UI
+// (not just disables it) down to a single confirmation banner, per Ben's
+// note that leaving all those fields visible-but-disabled read as clunky —
+// nothing about the existing record is being edited, so there's nothing to
+// show there at all once one's picked.
 async function useExistingCompany(id, name) {
   existingCompanyId = id;
   existingCompanyName = name;
   existingCompanyStage = null;
+
+  const table = entityType === 'existing' ? existingSearchTable : (entityType === 'vendor' ? 'vendor' : 'customer');
+  existingSearchTable = table;
+  entityType = 'existing';
+  selectedStageTier = null;
+  document.querySelectorAll('.entity-tab[data-tab]').forEach(el => el.classList.toggle('active', el.dataset.tab === 'existing'));
+
   document.getElementById('dup-warning').style.display = 'none';
+  document.getElementById('stage-field-wrap').style.display = 'none';
+  document.getElementById('vendor-category-field-wrap').style.display = 'none';
+  document.querySelector('.field-grid').style.display = 'none';
+  document.getElementById('manual-existing-search').style.display = 'none';
   document.getElementById('c-name').value = name;
-  document.querySelectorAll('.field-grid input, .field-grid select, #c-status, #v-category').forEach(el => el.disabled = true);
+  document.getElementById('entity-card-title').textContent = 'Existing Company';
+
   const label = document.getElementById('existing-company-label');
-  label.textContent = `Adding contact(s) to existing ${entityType === 'vendor' ? 'vendor' : 'record'}: "${name}" (NetSuite ID ${id})`;
+  label.textContent = `Adding contact(s) to existing ${table === 'vendor' ? 'vendor' : 'record'}: "${name}" (NetSuite ID ${id})`;
   document.getElementById('existing-company-banner').style.display = 'flex';
   updateSubmitButtonLabel();
 
@@ -991,7 +1036,7 @@ async function useExistingCompany(id, name) {
   // way it does for a newly-created record, since that's correctly left unset
   // here. Skipped for vendors (always eligible) and popout (SCOUT always wants
   // a real customer either way) — neither needs this fetch at all.
-  if (entityType !== 'vendor' && !isPopoutMode) {
+  if (table !== 'vendor' && !isPopoutMode) {
     try {
       const res = await fetch(NETSUITE_WORKER_URL, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
@@ -1006,14 +1051,18 @@ async function useExistingCompany(id, name) {
   }
 }
 
+// "Use a different company" — stays in existing-company mode (that's still
+// the intent), just re-opens the search so a different match can be picked.
 function clearExistingCompany() {
   existingCompanyId = null;
   existingCompanyName = null;
   existingCompanyStage = null;
   document.getElementById('existing-company-banner').style.display = 'none';
-  document.querySelectorAll('.field-grid input, .field-grid select, #c-status, #v-category').forEach(el => el.disabled = false);
   document.getElementById('c-name').value = '';
-  document.getElementById('c-name').focus();
+  document.getElementById('manual-existing-search').style.display = 'block';
+  document.getElementById('manual-existing-input').value = '';
+  document.getElementById('manual-existing-results').innerHTML = '';
+  document.getElementById('manual-existing-input').focus();
   updateSubmitButtonLabel();
 }
 
@@ -1082,6 +1131,7 @@ function updateSubmitButtonLabel() {
   const btn = document.getElementById('submit-btn');
   if (btn.disabled) return; // already submitted successfully — don't relabel a locked button
   if (existingCompanyId) { btn.textContent = `Add contact to "${existingCompanyName}"`; return; }
+  if (entityType === 'existing') { btn.textContent = 'Search for a company above…'; return; }
   if (entityType === 'vendor') { btn.textContent = 'Create vendor'; return; }
   const status = getStatusById(document.getElementById('c-status').value);
   btn.textContent = status ? `Create ${STAGE_LABELS[status.stage].toLowerCase()}` : 'Select a status…';
@@ -1180,6 +1230,7 @@ function buildVendorPayload() {
 }
 
 async function submitIntake() {
+  if (entityType === 'existing' && !existingCompanyId) { alert('Search for and pick a company first.'); return; }
   const name = document.getElementById('c-name').value.trim();
   if (!name) { alert(entityType === 'vendor' ? 'Vendor name is required.' : 'Company name is required.'); return; }
   if (!existingCompanyId && !isPopoutMode && entityType !== 'vendor' && !document.getElementById('c-status').value) {
@@ -1333,8 +1384,8 @@ function retryContact(index) {
 
 function isCurrentEntityProcoreEligible() {
   if (isPopoutMode) return true; // SCOUT always creates a real Customer
+  if (existingCompanyId) return existingSearchTable === 'vendor' || existingCompanyStage === 'CUSTOMER';
   if (entityType === 'vendor') return true; // vendors always export, per Ben
-  if (existingCompanyId) return existingCompanyStage === 'CUSTOMER';
   const status = getStatusById(document.getElementById('c-status').value);
   return !!status && status.stage === 'CUSTOMER';
 }
@@ -1455,7 +1506,8 @@ function resetForAnother() {
   existingCompanyName = null;
   existingCompanyStage = null;
   document.getElementById('existing-company-banner').style.display = 'none';
-  document.querySelectorAll('.field-grid input, .field-grid select, #c-status, #v-category').forEach(el => el.disabled = false);
+  document.getElementById('manual-existing-search').style.display = 'none';
+  document.querySelector('.field-grid').style.display = 'grid';
   document.getElementById('intake-email').value = '';
   document.getElementById('c-name').value = '';
   document.getElementById('c-status').value = ''; // force a deliberate choice each time, not just on first load
