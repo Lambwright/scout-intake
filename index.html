@@ -347,6 +347,17 @@ const PC_COMPANY_ID = '1';
 const PROCORE_COMPANY_ID = '562949953508586';
 const PROCORE_WORKER_URL = 'https://procore.ben-a90.workers.dev';
 
+// Confirmed live 2026-09-02 by finding real existing contacts already carrying
+// each named template — this account's Procore has no reachable "list
+// templates" endpoint (every path tried 404'd or errored), so these were
+// harvested from actual usage on real Company User records rather than a
+// schema lookup. `company: null` for customer is deliberate, not a gap — see
+// the comment at its one usage site in syncContactToProcore.
+const PROCORE_PERMISSION_TEMPLATES = {
+  customer: { company: null, project: 562949954069350 },      // Do Not Apply / Owner/Client - External
+  vendor:   { company: 562949954096160, project: 562949954069354 }, // Field Worker / Subcontractor - External
+};
+
 // NetSuite vendorcategory records — confirmed live via SuiteQL
 // (SELECT id, name FROM vendorcategory) on 2026-08-25. Only 4 exist; optional
 // on create, so a blank "no category" option is included.
@@ -401,6 +412,7 @@ let createdCustomerId = null;
 let existingCompanyId = null; // set when the user picks a duplicate-check match instead of creating new
 let existingCompanyName = null;
 let existingCompanyStage = null; // 'LEAD' | 'PROSPECT' | 'CUSTOMER' | null — the record's real current stage, fetched on pick (Procore-eligibility can't fall back to the local status dropdown here, since that's correctly left unset for an existing record)
+let existingCompanyAddress = null; // {street, city, state, zip, country} | null — fetched on pick, since an existing company's address was never typed into this form the way a new one's is
 let entityType = 'company'; // 'company' | 'vendor' — standalone only, always 'company' in popout mode
 let selectedStageTier = null; // 'LEAD' | 'PROSPECT' | 'CUSTOMER' | null — null until a tab is picked, or in vendor mode
 
@@ -1049,6 +1061,43 @@ async function useExistingCompany(id, name) {
       existingCompanyStage = status ? status.stage : null;
     } catch (e) { existingCompanyStage = null; }
   }
+
+  // A newly-created company's address is right there in the form; an existing
+  // one's never was, so it has to be fetched here to map onto contacts created
+  // against it (confirmed live: NetSuite's REST record API exposes this via a
+  // customer/vendor's addressBook sub-resource — SuiteQL has no flat column for
+  // it). Picks the default-shipping (or default-billing, or just the first)
+  // entry when a company has more than one address on file.
+  try {
+    const res = await fetch(NETSUITE_WORKER_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+      body: JSON.stringify({ method: 'GET', path: `/${table}/${id}/addressBook?expandSubResources=true` })
+    });
+    const data = await res.json();
+    const items = (data.items || []);
+    const pick = items.find(i => i.defaultShipping) || items.find(i => i.defaultBilling) || items[0];
+    const a = pick && pick.addressBookAddress;
+    existingCompanyAddress = a
+      ? { street: a.addr1 || '', city: a.city || '', state: a.state || '', zip: a.zip || '', country: (a.country && a.country.id) || '' }
+      : null;
+  } catch (e) { existingCompanyAddress = null; }
+}
+
+// Address to map onto a newly-created Procore contact — from the form for a
+// brand-new company, or fetched-on-pick for an existing one.
+function getCurrentCompanyAddress() {
+  if (existingCompanyId) return existingCompanyAddress;
+  return {
+    street: document.getElementById('c-street').value.trim(),
+    city: document.getElementById('c-city').value.trim(),
+    state: document.getElementById('c-province').value.trim(),
+    zip: document.getElementById('c-postal').value.trim(),
+    country: document.getElementById('c-country').value,
+  };
+}
+
+function isCurrentEntityVendor() {
+  return existingCompanyId ? existingSearchTable === 'vendor' : entityType === 'vendor';
 }
 
 // "Use a different company" — stays in existing-company mode (that's still
@@ -1057,6 +1106,7 @@ function clearExistingCompany() {
   existingCompanyId = null;
   existingCompanyName = null;
   existingCompanyStage = null;
+  existingCompanyAddress = null;
   document.getElementById('existing-company-banner').style.display = 'none';
   document.getElementById('c-name').value = '';
   document.getElementById('manual-existing-search').style.display = 'block';
@@ -1422,16 +1472,42 @@ async function syncContactToProcore(index, nsContactId, data, label) {
     return;
   }
 
+  // Field names confirmed live against a real Company User record (2026-09-02):
+  // business_phone_extension is a plain top-level integer field, not folded
+  // into business_phone as text — the extension was previously dropped
+  // entirely, never sent to Procore at all.
   const userPayload = {
     last_name: data.lname || data.fname || 'Unknown',
     first_name: data.fname || '',
     email_address: data.email || undefined,
     business_phone: data.phone || undefined,
+    business_phone_extension: data.ext ? Number(data.ext) : undefined,
     job_title: data.title || undefined,
     is_active: true,
     is_employee: false,
     vendor_id: Number(vendorId)
   };
+
+  const addr = getCurrentCompanyAddress();
+  if (addr) {
+    if (addr.street) userPayload.address = addr.street;
+    if (addr.city) userPayload.city = addr.city;
+    if (addr.state) userPayload.state_code = addr.state;
+    if (addr.zip) userPayload.zip = addr.zip;
+    if (addr.country) userPayload.country_code = addr.country;
+  }
+
+  // Permission template IDs confirmed live by finding real existing contacts
+  // already carrying each named template (2026-09-02) — Procore has no
+  // discoverable "list templates" endpoint on this account, so these were
+  // harvested from actual usage rather than a schema lookup. company_template
+  // null is deliberate: "Do Not Apply Permissions Template" (Customer's
+  // company-level setting) is the *absence* of company_permission_template_id,
+  // confirmed by checking real Owner/Client - External contacts, all of which
+  // have it unset.
+  const perms = isCurrentEntityVendor() ? PROCORE_PERMISSION_TEMPLATES.vendor : PROCORE_PERMISSION_TEMPLATES.customer;
+  if (perms.company) userPayload.company_permission_template_id = perms.company;
+  if (perms.project) userPayload.permission_template_id = perms.project;
 
   let pcBody;
   try {
@@ -1505,6 +1581,7 @@ function resetForAnother() {
   existingCompanyId = null;
   existingCompanyName = null;
   existingCompanyStage = null;
+  existingCompanyAddress = null;
   document.getElementById('existing-company-banner').style.display = 'none';
   document.getElementById('manual-existing-search').style.display = 'none';
   document.querySelector('.field-grid').style.display = 'grid';
