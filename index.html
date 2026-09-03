@@ -427,6 +427,7 @@ function appSwitcherLinks() {
     { name: 'PUNCH', url: 'https://lambwright.github.io/PUNCH/', comingSoon: !isOwner },
     { name: 'SCOUT', url: 'https://lambwright.github.io/scout-addin/app.html' },
     { name: 'INTAKE', url: 'https://lambwright.github.io/scout-intake/', current: true },
+    { name: 'TALLY', url: 'https://lambwright.github.io/tally/' },
   ];
 }
 function initAppSwitcher() {
@@ -1512,7 +1513,7 @@ async function syncContactToProcore(index, nsContactId, data, label) {
   let pcBody;
   try {
     const pcRes = await fetch(PROCORE_WORKER_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({
         method: 'POST', version: 'v1.3',
         path: `/companies/${PROCORE_COMPANY_ID}/users`,
