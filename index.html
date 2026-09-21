@@ -159,11 +159,20 @@
        shrink past their content's natural width (implicit min-width:auto),
        which is exactly what was pushing Phone/the remove button outside the
        card's own padding. */
-    .contact-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.2fr) minmax(0,0.9fr) minmax(0,0.5fr) auto; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .contact-item { margin-bottom: 8px; }
+    .contact-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.2fr) minmax(0,0.9fr) minmax(0,0.5fr) auto; gap: 8px; align-items: center; }
     .contact-row input { min-width: 0; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); font-family: inherit; }
     .contact-row input:focus { outline: none; border-color: var(--green); background: var(--bg-card); box-shadow: 0 0 0 3px rgba(143,199,66,0.12); }
     .btn-remove-contact { background: none; border: 1px solid var(--border-input); border-radius: var(--radius-sm); color: var(--text-tertiary); width: 30px; height: 30px; cursor: pointer; font-size: 16px; line-height: 1; }
     .btn-remove-contact:hover { color: var(--red); border-color: var(--red-border); }
+
+    /* Optional per-contact Procore permission override — collapsed by default.
+       Estimating never needs this; Ben/Josh open it when they know what to set. */
+    .contact-perms-toggle { background: none; border: none; color: var(--text-tertiary); font-size: 11px; cursor: pointer; padding: 4px 0 0; text-decoration: underline; }
+    .contact-perms-toggle:hover { color: var(--text-secondary); }
+    .contact-perms { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; padding: 10px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
+    .contact-perms .field label { font-size: 10px; }
+    .contact-perms select { width: 100%; font-size: 12px; padding: 6px 8px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--text-primary); font-family: inherit; }
 
     .signature-hint { display: none; align-items: flex-start; gap: 10px; background: var(--green-light); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 10px; font-size: 12px; color: var(--text-primary); width: 100%; }
     .dup-warning { display: none; background: #fef9c3; color: #92400e; border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; font-size: 12px; }
@@ -188,6 +197,7 @@
     @media (max-width: 700px) {
       .contact-row { grid-template-columns: 1fr 1fr; }
       .field-grid { grid-template-columns: 1fr 1fr; }
+      .contact-perms { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -347,16 +357,49 @@ const PC_COMPANY_ID = '1';
 const PROCORE_COMPANY_ID = '562949953508586';
 const PROCORE_WORKER_URL = 'https://procore.ben-a90.workers.dev';
 
-// Confirmed live 2026-09-02 by finding real existing contacts already carrying
-// each named template — this account's Procore has no reachable "list
-// templates" endpoint (every path tried 404'd or errored), so these were
-// harvested from actual usage on real Company User records rather than a
-// schema lookup. `company: null` for customer is deliberate, not a gap — see
+// Defaults applied automatically when nobody overrides them below — these IDs
+// were originally harvested from real contacts' assigned templates (2026-09-02).
+// The "no reachable list templates endpoint" claim in an earlier version of
+// this comment was wrong — GET /rest/v1.0/companies/{id}/permission_templates
+// works fine (confirmed live 2026-09-21) and is what backed the two option
+// lists below. `company: null` for customer is deliberate, not a gap — see
 // the comment at its one usage site in syncContactToProcore.
 const PROCORE_PERMISSION_TEMPLATES = {
   customer: { company: null, project: 562949954069350 },      // Do Not Apply / Owner/Client - External
   vendor:   { company: 562949954096160, project: 562949954069354 }, // Field Worker / Subcontractor - External
 };
+
+// Real Company-level ("company_permission_template_id") and Project-level
+// ("default_permission_template_id") templates for Einbau's Procore account —
+// confirmed live via GET /rest/v1.0/companies/{id}/permission_templates on
+// 2026-09-21 (filters[type]=company_tools and =project_tools respectively).
+// Project list excludes one project_specific one-off template ("dustins
+// permissions") since project_specific templates only make sense scoped to
+// the single project they were built for, not as a general default.
+const PROCORE_COMPANY_PERMISSION_OPTIONS = [
+  { id: '562949954232901', name: 'Connector - Company' },
+  { id: '562949954096155', name: 'PM/Estimator' },
+  { id: '562949954189445', name: 'Operations Manager' },
+  { id: '562949954096160', name: 'Field Worker' },
+  { id: '562949954105657', name: 'Admin' },
+  { id: '562949954235725', name: 'Subcontractor Timesheet Manager' }
+];
+const PROCORE_PROJECT_PERMISSION_OPTIONS = [
+  { id: '562949954249868', name: 'Owner/Client - Only Inspections & RFIs' },
+  { id: '562949954069350', name: 'Owner/Client - External' },
+  { id: '562949954069343', name: 'Architect/Engineer - External' },
+  { id: '562949954069354', name: 'Subcontractor - External' },
+  { id: '562949954069592', name: 'Architectural Millwork Installer' },
+  { id: '562949954069347', name: 'Architectural Millwork Supervisor' },
+  { id: '562949954069352', name: 'Architectural Millwork Project Manager' },
+  { id: '562949954232900', name: 'Connector - Project' },
+  { id: '562949954096264', name: 'QuoteToMe Integration' },
+  { id: '562949954147392', name: 'Payroll Administrator' },
+  { id: '562949954189488', name: 'Architectural Millwork Operations Manager' },
+  { id: '562949954189482', name: 'RFP Client Custom' },
+  { id: '562949954105659', name: 'Administrator' },
+  { id: '562949954198491', name: 'SAMAP USA Client' }
+];
 
 // NetSuite vendorcategory records — confirmed live via SuiteQL
 // (SELECT id, name FROM vendorcategory) on 2026-08-25. Only 4 exist; optional
@@ -861,8 +904,20 @@ function clearContacts() {
   document.getElementById('contacts-list').innerHTML = '';
 }
 
+function populatePermissionSelect(sel, templates) {
+  templates.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name;
+    sel.appendChild(opt);
+  });
+}
+
 function addContactRow(data) {
   data = data || {};
+  const item = document.createElement('div');
+  item.className = 'contact-item';
+
   const row = document.createElement('div');
   row.className = 'contact-row';
   // Static, app-authored markup only — no interpolation of parsed data here.
@@ -881,19 +936,59 @@ function addContactRow(data) {
   row.querySelector('.c-email').value = data.email || '';
   row.querySelector('.c-phone').value = data.phone || '';
   row.querySelector('.c-ext').value = data.ext || '';
-  row.querySelector('.btn-remove-contact').addEventListener('click', () => row.remove());
-  document.getElementById('contacts-list').appendChild(row);
+  row.querySelector('.btn-remove-contact').addEventListener('click', () => item.remove());
+  item.appendChild(row);
+
+  // Optional Procore permission override, collapsed by default — see
+  // PROCORE_PERMISSION_TEMPLATES for what applies automatically when this is
+  // left alone. Estimating shouldn't have to think about this; Ben/Josh can
+  // open it when they know exactly what a contact needs.
+  const permsToggle = document.createElement('button');
+  permsToggle.type = 'button';
+  permsToggle.className = 'contact-perms-toggle';
+  permsToggle.textContent = '+ Set Procore permissions (optional)';
+  const permsBlock = document.createElement('div');
+  permsBlock.className = 'contact-perms';
+  permsBlock.style.display = 'none';
+  permsBlock.innerHTML = `
+    <div class="field"><label>Company-level permissions</label><select class="c-company-perm"></select></div>
+    <div class="field"><label>Default project-level permissions</label><select class="c-project-perm"></select></div>
+  `;
+  const companyPermSel = permsBlock.querySelector('.c-company-perm');
+  const projectPermSel = permsBlock.querySelector('.c-project-perm');
+  companyPermSel.innerHTML = '<option value="">Use automatic default</option>';
+  projectPermSel.innerHTML = '<option value="">Use automatic default</option>';
+  populatePermissionSelect(companyPermSel, PROCORE_COMPANY_PERMISSION_OPTIONS);
+  populatePermissionSelect(projectPermSel, PROCORE_PROJECT_PERMISSION_OPTIONS);
+  companyPermSel.value = data.companyPermTemplateId || '';
+  projectPermSel.value = data.projectPermTemplateId || '';
+  permsToggle.addEventListener('click', () => {
+    const opening = permsBlock.style.display === 'none';
+    permsBlock.style.display = opening ? 'grid' : 'none';
+    permsToggle.textContent = opening ? '− Hide Procore permissions' : '+ Set Procore permissions (optional)';
+  });
+  item.appendChild(permsToggle);
+  item.appendChild(permsBlock);
+
+  document.getElementById('contacts-list').appendChild(item);
 }
 
 function collectContacts() {
-  return Array.from(document.querySelectorAll('#contacts-list .contact-row')).map(row => ({
-    fname: row.querySelector('.c-fname').value.trim(),
-    lname: row.querySelector('.c-lname').value.trim(),
-    title: row.querySelector('.c-title').value.trim(),
-    email: row.querySelector('.c-email').value.trim(),
-    phone: row.querySelector('.c-phone').value.trim(),
-    ext: row.querySelector('.c-ext').value.trim()
-  })).filter(c => c.fname || c.lname || c.email);
+  return Array.from(document.querySelectorAll('#contacts-list .contact-row')).map(row => {
+    const item = row.closest('.contact-item');
+    const companyPermSel = item && item.querySelector('.c-company-perm');
+    const projectPermSel = item && item.querySelector('.c-project-perm');
+    return {
+      fname: row.querySelector('.c-fname').value.trim(),
+      lname: row.querySelector('.c-lname').value.trim(),
+      title: row.querySelector('.c-title').value.trim(),
+      email: row.querySelector('.c-email').value.trim(),
+      phone: row.querySelector('.c-phone').value.trim(),
+      ext: row.querySelector('.c-ext').value.trim(),
+      companyPermTemplateId: companyPermSel ? companyPermSel.value : '',
+      projectPermTemplateId: projectPermSel ? projectPermSel.value : ''
+    };
+  }).filter(c => c.fname || c.lname || c.email);
 }
 
 // ---------- duplicate check (warn, don't block) ----------
@@ -1498,17 +1593,26 @@ async function syncContactToProcore(index, nsContactId, data, label) {
     if (addr.country) userPayload.country_code = addr.country;
   }
 
-  // Permission template IDs confirmed live by finding real existing contacts
-  // already carrying each named template (2026-09-02) — Procore has no
-  // discoverable "list templates" endpoint on this account, so these were
-  // harvested from actual usage rather than a schema lookup. company_template
-  // null is deliberate: "Do Not Apply Permissions Template" (Customer's
-  // company-level setting) is the *absence* of company_permission_template_id,
-  // confirmed by checking real Owner/Client - External contacts, all of which
-  // have it unset.
-  const perms = isCurrentEntityVendor() ? PROCORE_PERMISSION_TEMPLATES.vendor : PROCORE_PERMISSION_TEMPLATES.customer;
-  if (perms.company) userPayload.company_permission_template_id = perms.company;
-  if (perms.project) userPayload.permission_template_id = perms.project;
+  // Defaults, overridable per-contact via the optional "Set Procore
+  // permissions" fields (data.companyPermTemplateId/projectPermTemplateId) —
+  // left blank for everyone except whoever actually opens that section.
+  // company: null for customer is deliberate: "Do Not Apply Permissions
+  // Template" is the *absence* of company_permission_template_id, confirmed
+  // by checking real Owner/Client - External contacts, all of which have it
+  // unset.
+  //
+  // Field name fix (2026-09-21): this previously sent `permission_template_id`,
+  // which isn't a real field on Create Company User — confirmed against
+  // Procore's own API reference, the field is `default_permission_template_id`.
+  // Procore silently ignores unrecognized field names rather than erroring
+  // (same failure class NetSuite has bitten this project with before), so
+  // every contact synced through here since 2026-09-02 had its project-level
+  // permission template silently dropped, never actually applied.
+  const defaults = isCurrentEntityVendor() ? PROCORE_PERMISSION_TEMPLATES.vendor : PROCORE_PERMISSION_TEMPLATES.customer;
+  const companyPermId = data.companyPermTemplateId || defaults.company;
+  const projectPermId = data.projectPermTemplateId || defaults.project;
+  if (companyPermId) userPayload.company_permission_template_id = Number(companyPermId);
+  if (projectPermId) userPayload.default_permission_template_id = Number(projectPermId);
 
   let pcBody;
   try {
