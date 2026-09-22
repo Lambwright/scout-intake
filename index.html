@@ -237,6 +237,15 @@
   </div>
 </div>
 
+<div id="screen-access-denied" class="login-wrap" style="display:none;">
+  <div class="login-card">
+    <div class="login-title">EINBAU ID</div>
+    <div class="login-sub">Your account doesn't have access to INTAKE</div>
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">Ask an admin to grant INTAKE access in HELM if you think this is a mistake.</div>
+    <button onclick="doLogout()" class="btn btn-ghost" style="width:100%;justify-content:center;">Log out</button>
+  </div>
+</div>
+
 <div id="screen-app" class="container" style="display:none;">
 
   <div id="entity-tabs-wrap" class="entity-tabs" style="display:none;">
@@ -583,12 +592,31 @@ async function verifySession(token) {
 
 function showLogin() {
   document.getElementById('screen-login').style.display = 'flex';
+  document.getElementById('screen-access-denied').style.display = 'none';
+  document.getElementById('screen-app').style.display = 'none';
+  document.getElementById('user-badge').style.display = 'none';
+}
+
+function showAccessDenied() {
+  document.getElementById('screen-login').style.display = 'none';
+  document.getElementById('screen-access-denied').style.display = 'flex';
   document.getElementById('screen-app').style.display = 'none';
   document.getElementById('user-badge').style.display = 'none';
 }
 
 function showApp() {
+  // Additive to the login check above — see auth-worker/README.md, "The user
+  // object, and the apps field". Absent `apps` (every user today) = unrestricted,
+  // same as before this field existed; only deny when it's a real array that
+  // doesn't name this app. Doesn't replace any other authorization INTAKE does,
+  // just an extra "can this account open INTAKE at all" gate in front of it.
+  const apps = currentUser && currentUser.apps;
+  if (apps && !apps.includes('INTAKE')) {
+    showAccessDenied();
+    return;
+  }
   document.getElementById('screen-login').style.display = 'none';
+  document.getElementById('screen-access-denied').style.display = 'none';
   document.getElementById('screen-app').style.display = 'block';
   document.getElementById('user-badge').style.display = 'flex';
   document.getElementById('current-user-name').textContent = currentUser ? currentUser.displayName : '';
