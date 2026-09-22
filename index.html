@@ -468,15 +468,14 @@ let existingCompanyAddress = null; // {street, city, state, zip, country} | null
 let entityType = 'company'; // 'company' | 'vendor' — standalone only, always 'company' in popout mode
 let selectedStageTier = null; // 'LEAD' | 'PROSPECT' | 'CUSTOMER' | null — null until a tab is picked, or in vendor mode
 
-// Shared across PUNCH/SCOUT/INTAKE. PUNCH is Ben's personal tool (punch-worker
-// checks the logged-in username, not just that a session is valid) — everyone
-// else sees it greyed out, but for Ben himself it's a real link, same as the
-// other two. Re-run once login state is known (initial render can't tell yet).
-const PUNCH_OWNER_USERNAME = 'ben';
+// Shared across PUNCH/SCOUT/INTAKE. PUNCH used to be Ben's personal tool only,
+// but it now has real multi-user access (its own backend verifies the Einbau ID
+// token and enforces a restricted view for non-admins) — so the link is live for
+// everyone here; anyone without real access gets PUNCH's own login/access-denied
+// screen when they click through, same as any other app.
 function appSwitcherLinks() {
-  const isOwner = currentUser && currentUser.username === PUNCH_OWNER_USERNAME;
   return [
-    { name: 'PUNCH', url: 'https://lambwright.github.io/PUNCH/', comingSoon: !isOwner },
+    { name: 'PUNCH', url: 'https://lambwright.github.io/PUNCH/' },
     { name: 'SCOUT', url: 'https://lambwright.github.io/scout-addin/app.html' },
     { name: 'INTAKE', url: 'https://lambwright.github.io/scout-intake/', current: true },
     { name: 'TALLY', url: 'https://lambwright.github.io/tally/' },
