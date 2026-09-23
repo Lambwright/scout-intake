@@ -458,6 +458,30 @@ const STAGE_LABELS = { LEAD: 'Lead', PROSPECT: 'Prospect', CUSTOMER: 'Customer' 
 
 let authToken = null;
 let currentUser = null;
+
+// Personal accent override, set once in HELM ("My Account" → Appearance) and
+// carried on every Einbau ID user record as `themeAccent`. Every suite app
+// applies it the same way: same preset table, same three CSS custom
+// properties this app's own :root already defines. Per-user, server-side —
+// one person's choice never touches anyone else's session.
+const ACCENT_PRESETS = [
+  { id: 'tungsten', accent: '#9BA8B5', accentDark: '#7A8794', rgb: '155, 168, 181' },
+  { id: 'amber', accent: '#D1A93F', accentDark: '#A6842F', rgb: '209, 169, 63' },
+  { id: 'crimson', accent: '#D14343', accentDark: '#A63333', rgb: '209, 67, 67' },
+  { id: 'forest', accent: '#6FB35C', accentDark: '#559244', rgb: '111, 179, 92' },
+  { id: 'violet', accent: '#9B7ED1', accentDark: '#7C5FA8', rgb: '155, 126, 209' },
+];
+function applyAccentPreset(presetId) {
+  const preset = ACCENT_PRESETS.find(p => p.id === presetId);
+  const root = document.documentElement.style;
+  if (!preset) {
+    root.removeProperty('--accent'); root.removeProperty('--accent-dark'); root.removeProperty('--accent-rgb');
+    return;
+  }
+  root.setProperty('--accent', preset.accent);
+  root.setProperty('--accent-dark', preset.accentDark);
+  root.setProperty('--accent-rgb', preset.rgb);
+}
 let isPopoutMode = false;
 let pendingAttachment = null;
 let createdCustomerId = null;
@@ -614,6 +638,7 @@ function showApp() {
     showAccessDenied();
     return;
   }
+  if (currentUser && currentUser.themeAccent) applyAccentPreset(currentUser.themeAccent);
   document.getElementById('screen-login').style.display = 'none';
   document.getElementById('screen-access-denied').style.display = 'none';
   document.getElementById('screen-app').style.display = 'block';
@@ -679,6 +704,7 @@ async function doLogin(e) {
 
 function doLogout() {
   authToken = null; currentUser = null;
+  applyAccentPreset(null);
   localStorage.removeItem('einbau_id_token');
   sessionStorage.removeItem('einbau_id_token');
   showLogin();
