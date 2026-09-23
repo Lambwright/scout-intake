@@ -470,6 +470,10 @@ const ACCENT_PRESETS = [
   { id: 'crimson', accent: '#D14343', accentDark: '#A63333', rgb: '209, 67, 67' },
   { id: 'forest', accent: '#6FB35C', accentDark: '#559244', rgb: '111, 179, 92' },
   { id: 'violet', accent: '#9B7ED1', accentDark: '#7C5FA8', rgb: '155, 126, 209' },
+  { id: 'teal', accent: '#3F9EA0', accentDark: '#2F7B7D', rgb: '63, 158, 160' },
+  { id: 'rose', accent: '#D1618F', accentDark: '#A64A70', rgb: '209, 97, 143' },
+  { id: 'indigo', accent: '#6C7BD1', accentDark: '#55639F', rgb: '108, 123, 209' },
+  { id: 'copper', accent: '#C97D4F', accentDark: '#A2623C', rgb: '201, 125, 79' },
 ];
 function applyAccentPreset(presetId) {
   const preset = ACCENT_PRESETS.find(p => p.id === presetId);
@@ -638,7 +642,7 @@ function showApp() {
     showAccessDenied();
     return;
   }
-  if (currentUser && currentUser.themeAccent) applyAccentPreset(currentUser.themeAccent);
+  if (currentUser && currentUser.themeAccent && currentUser.themeAccent.INTAKE) applyAccentPreset(currentUser.themeAccent.INTAKE);
   document.getElementById('screen-login').style.display = 'none';
   document.getElementById('screen-access-denied').style.display = 'none';
   document.getElementById('screen-app').style.display = 'block';
