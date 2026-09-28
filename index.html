@@ -497,9 +497,8 @@ let entityType = 'company'; // 'company' | 'vendor' — standalone only, always 
 let selectedStageTier = null; // 'LEAD' | 'PROSPECT' | 'CUSTOMER' | null — null until a tab is picked, or in vendor mode
 
 // Same suite switcher every other app carries. Only apps this user can open,
-// then HELM always last (it's where settings live). `apps` absent =
-// unrestricted, except LEDGER, which fails closed and needs an explicit grant
-// (see auth-worker/README.md). Keep the list and this rule identical across apps.
+// then HELM always last (it's where settings live). No apps granted = nothing
+// but this app and HELM (access fails closed — see auth-worker/README.md). Keep the list and this rule identical across apps.
 function appSwitcherLinks() {
   const CURRENT_APP = 'INTAKE';
   const links = [
@@ -513,8 +512,8 @@ function appSwitcherLinks() {
   ];
   const helm = { name: 'HELM', url: 'https://lambwright.github.io/helm/' };
   const raw = currentUser && currentUser.apps;
-  const apps = Array.isArray(raw) ? raw.map(a => String(a).toUpperCase()) : null;
-  const allowed = name => apps ? apps.includes(name) : name !== 'LEDGER';
+  const apps = (Array.isArray(raw) ? raw : []).map(a => String(a).toUpperCase());
+  const allowed = name => apps.includes(name);
   return links.filter(a => a.name === CURRENT_APP || allowed(a.name)).concat(helm)
     .map(a => Object.assign({}, a, { current: a.name === CURRENT_APP }));
 }
@@ -700,7 +699,9 @@ async function doLogin(e) {
     });
     const data = await res.json();
     if (!res.ok || !data.token) {
-      errEl.textContent = data.error === 'rate_limited' ? 'Too many attempts — try again later.' : 'Invalid username or password.';
+      errEl.textContent = data.error === 'rate_limited' ? 'Too many attempts — try again later.'
+        : data.error === 'no_app_access' ? 'Your account doesn’t have access to any apps yet. Ask an admin to grant you access in HELM.'
+        : 'Invalid username or password.';
       btn.disabled = false;
       return;
     }
