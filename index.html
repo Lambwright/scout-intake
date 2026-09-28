@@ -496,22 +496,27 @@ let existingCompanyAddress = null; // {street, city, state, zip, country} | null
 let entityType = 'company'; // 'company' | 'vendor' — standalone only, always 'company' in popout mode
 let selectedStageTier = null; // 'LEAD' | 'PROSPECT' | 'CUSTOMER' | null — null until a tab is picked, or in vendor mode
 
-// Shared across PUNCH/SCOUT/INTAKE. PUNCH used to be Ben's personal tool only,
-// but it now has real multi-user access (its own backend verifies the Einbau ID
-// token and enforces a restricted view for non-admins) — so the link is live for
-// everyone here; anyone without real access gets PUNCH's own login/access-denied
-// screen when they click through, same as any other app.
+// Same suite switcher every other app carries. Only apps this user can open,
+// then HELM always last (it's where settings live). `apps` absent =
+// unrestricted, except LEDGER, which fails closed and needs an explicit grant
+// (see auth-worker/README.md). Keep the list and this rule identical across apps.
 function appSwitcherLinks() {
-  return [
+  const CURRENT_APP = 'INTAKE';
+  const links = [
     { name: 'PUNCH', url: 'https://lambwright.github.io/PUNCH/' },
     { name: 'SCOUT', url: 'https://lambwright.github.io/scout-addin/app.html' },
-    { name: 'INTAKE', url: 'https://lambwright.github.io/scout-intake/', current: true },
+    { name: 'INTAKE', url: 'https://lambwright.github.io/scout-intake/' },
     { name: 'TALLY', url: 'https://lambwright.github.io/tally/' },
     { name: 'HANDOFF', url: 'https://lambwright.github.io/handoff/' },
     { name: 'LEDGER', url: 'https://lambwright.github.io/ledger/' },
-    { name: 'HELM', url: 'https://lambwright.github.io/helm/' },
     { name: 'CRM', url: 'https://lambwright.github.io/crm/' },
   ];
+  const helm = { name: 'HELM', url: 'https://lambwright.github.io/helm/' };
+  const raw = currentUser && currentUser.apps;
+  const apps = Array.isArray(raw) ? raw.map(a => String(a).toUpperCase()) : null;
+  const allowed = name => apps ? apps.includes(name) : name !== 'LEDGER';
+  return links.filter(a => a.name === CURRENT_APP || allowed(a.name)).concat(helm)
+    .map(a => Object.assign({}, a, { current: a.name === CURRENT_APP }));
 }
 function initAppSwitcher() {
   const menu = document.getElementById('app-switcher-menu');
