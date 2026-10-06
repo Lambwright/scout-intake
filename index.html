@@ -640,12 +640,13 @@ function showAccessDenied() {
 
 function showApp() {
   // Additive to the login check above — see auth-worker/README.md, "The user
-  // object, and the apps field". Absent `apps` (every user today) = unrestricted,
-  // same as before this field existed; only deny when it's a real array that
-  // doesn't name this app. Doesn't replace any other authorization INTAKE does,
-  // just an extra "can this account open INTAKE at all" gate in front of it.
-  const apps = currentUser && currentUser.apps;
-  if (apps && !apps.includes('INTAKE')) {
+  // object, and the apps field". Fail-closed: auth-worker always returns `apps`
+  // as an array of canonical IDs (and refuses logins with none), so a missing
+  // or non-array value means something is wrong and gets no access — same
+  // rule the app switcher below already uses. Doesn't replace any other
+  // authorization INTAKE does, just a "can this account open INTAKE at all" gate.
+  const apps = (currentUser && Array.isArray(currentUser.apps) ? currentUser.apps : []).map(a => String(a).toUpperCase());
+  if (!apps.includes('INTAKE')) {
     showAccessDenied();
     return;
   }
