@@ -191,6 +191,8 @@
     .result-row.status-success .result-icon { color: var(--green-dark); }
     .result-row.status-error { border-color: var(--red-border); background: var(--red-light); }
     .result-row.status-error .result-icon { color: var(--red); }
+    .result-row.status-warn { border-color: #f6d58a; background: #fffbeb; }
+    .result-row.status-warn .result-icon { color: var(--amber); }
     .btn-retry { background: none; border: 1px solid var(--red-border); color: var(--red); padding: 4px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; }
     .btn-retry:hover { background: var(--red-light); }
 
@@ -355,6 +357,25 @@
 const AUTH_URL = 'https://auth.ben-a90.workers.dev';
 const SCOUT_WORKER_URL = 'https://scout.ben-a90.workers.dev';
 const NETSUITE_WORKER_URL = 'https://netsuite.ben-a90.workers.dev';
+
+// NetSuite's login intermittently rejects a perfectly valid request ("Invalid
+// login attempt"). The worker retries a few times itself, but the rejection can
+// outlast that, and the worker hands NetSuite's error back with HTTP 200, so it
+// has to be spotted in the body. A login rejection happens before NetSuite does
+// anything, so repeating the request is safe even for creates. Drop-in for
+// fetch(): callers still get a Response they can .json().
+const NS_LOGIN_ERROR = /Invalid login attempt|INVALID_LOGIN/i;
+async function nsFetch(url, init) {
+  const waits = [1500, 3000, 5000, 8000];
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init);
+    const text = await res.text();
+    if (!NS_LOGIN_ERROR.test(text) || attempt >= waits.length) {
+      return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
+    }
+    await new Promise(r => setTimeout(r, waits[attempt]));
+  }
+}
 const SCOUT_ORIGIN = 'https://lambwright.github.io';
 
 // Internal id of the "Einbau - PC Company" PC Companies record (NetSuite → Procore
@@ -1088,7 +1109,7 @@ async function searchExistingCompanies(rawName, table) {
   const name = normalizeCompanyName(rawName);
   if (!name || name.length < 3) return [];
   try {
-    const res = await fetch(NETSUITE_WORKER_URL, {
+    const res = await nsFetch(NETSUITE_WORKER_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
         data: { q: `SELECT id, companyname FROM ${table} WHERE UPPER(companyname) LIKE '%${escapeSql(name)}%' AND isinactive = 'F'` } })
@@ -1214,7 +1235,7 @@ async function useExistingCompany(id, name) {
   // a real customer either way) — neither needs this fetch at all.
   if (table !== 'vendor' && !isPopoutMode) {
     try {
-      const res = await fetch(NETSUITE_WORKER_URL, {
+      const res = await nsFetch(NETSUITE_WORKER_URL, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
         body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
           data: { q: `SELECT entitystatus FROM customer WHERE id = '${id}'` } })
@@ -1233,7 +1254,7 @@ async function useExistingCompany(id, name) {
   // it). Picks the default-shipping (or default-billing, or just the first)
   // entry when a company has more than one address on file.
   try {
-    const res = await fetch(NETSUITE_WORKER_URL, {
+    const res = await nsFetch(NETSUITE_WORKER_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ method: 'GET', path: `/${table}/${id}/addressBook?expandSubResources=true` })
     });
@@ -1284,7 +1305,7 @@ function clearExistingCompany() {
 
 async function postToNetsuite(path, data) {
   try {
-    const res = await fetch(NETSUITE_WORKER_URL, {
+    const res = await nsFetch(NETSUITE_WORKER_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ method: 'POST', path, data })
     });
@@ -1306,7 +1327,7 @@ async function postToNetsuite(path, data) {
 
 async function findEntityIdByExactName(name, table) {
   try {
-    const res = await fetch(NETSUITE_WORKER_URL, {
+    const res = await nsFetch(NETSUITE_WORKER_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
         data: { q: `SELECT id FROM ${table} WHERE companyname = '${escapeSql(name)}' ORDER BY id DESC` } })
@@ -1327,8 +1348,8 @@ function renderResultRow(id, label, status, errorMsg, retryHandler) {
     document.getElementById('submit-results').appendChild(row);
   }
   row.className = `result-row status-${status}`;
-  row.querySelector('.result-label').textContent = (status === 'error' && errorMsg) ? `${label} — ${errorMsg}` : label;
-  row.querySelector('.result-icon').innerHTML = status === 'success' ? '✓' : status === 'error' ? '✗' : '<span class="spinner"></span>';
+  row.querySelector('.result-label').textContent = ((status === 'error' || status === 'warn') && errorMsg) ? `${label} — ${errorMsg}` : label;
+  row.querySelector('.result-icon').innerHTML = status === 'success' ? '✓' : status === 'error' ? '✗' : status === 'warn' ? '!' : '<span class="spinner"></span>';
   const existingBtn = row.querySelector('.btn-retry');
   if (existingBtn) existingBtn.remove();
   if (status === 'error' && retryHandler) {
@@ -1605,7 +1626,7 @@ function isCurrentEntityProcoreEligible() {
 }
 
 async function findProcoreVendorIdForEntity(nsEntityId) {
-  const res = await fetch(NETSUITE_WORKER_URL, {
+  const res = await nsFetch(NETSUITE_WORKER_URL, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
     body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
       data: { q: `SELECT custrecord_r_it_entity_pc_id FROM customrecord_r_it_entity_pc_ids WHERE custrecord_r_it_entity_record = '${nsEntityId}'` } })
@@ -1720,7 +1741,10 @@ async function syncContactToProcore(index, nsContactId, data, label) {
   } else {
     // Deliberately no retry here — the Procore user already exists, so retrying
     // would create a duplicate. NetSuite-side link is a nice-to-have, not blocking.
-    renderResultRow(rowId, `Procore sync — ${label}`, 'error', `Synced but linking back to NetSuite failed: ${writeBack.error}`, null);
+    // Yellow, not red: the contact is in NetSuite and Procore; only the optional
+    // back-link record is missing, which nothing depends on.
+    console.warn('Procore link-back to NetSuite failed:', writeBack.error);
+    renderResultRow(rowId, `Procore sync — ${label} (user id ${procoreUserId})`, 'warn', 'Synced to NetSuite and Procore. The back-link record in NetSuite did not save, which is harmless — nothing to fix.', null);
   }
 }
 
