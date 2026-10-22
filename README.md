@@ -16,16 +16,14 @@ Works two ways:
 Gated by the shared Einbau ID Worker (`auth.ben-a90.workers.dev`) — same login
 system as SCOUT. See the `auth-worker` repo for how that's deployed.
 
-### Coming change: Einbau ID role matrix
+### Einbau ID role matrix
 
-Einbau ID is moving from a flat "restricted to these app IDs" list to company
-job roles plus a per-app permission matrix, managed in HELM. Per the
-auth-worker session's proposal (2026-09-30): `user.apps` keeps its current
-meaning (still what INTAKE's access gate checks), now computed from the
-matrix instead of set directly; `user.appRoles` and `user.jobRole` are new
-fields INTAKE doesn't use today. INTAKE's existing `apps.includes('INTAKE')`
-gate keeps working unchanged. INTAKE has no code that reads `user.role`, a
-hardcoded username, or anything else on the user object for authorization.
+Einbau ID access is managed in HELM through the role matrix (done): `user.apps` is computed
+from the matrix, and INTAKE's gate is `apps.includes('INTAKE')` (each app has one level,
+`access`). INTAKE has no code that reads `user.role` (retired), a hardcoded username, or
+anything else on the user object for authorization, and no hardcoded people. The three
+workers it calls (netsuite, procore, scout) make the same `apps` check server-side, with
+service-key headers for Power Automate and server callers.
 
 Handoff protocol when opened as a SCOUT popout (both sides check
 `event.origin` before acting on a message):
