@@ -202,10 +202,11 @@
       .contact-perms { grid-template-columns: 1fr; }
     }
   </style>
+<script src="https://lambwright.github.io/helm/einbau-festive.js" defer></script>
 </head>
 <body>
 
-<header class="header">
+<header class="header" data-einbau-header>
   <div class="header-badge app-switcher" id="app-switcher-trigger" onclick="toggleAppSwitcher(event)">
     <span class="header-badge-name">Intake<span class="app-switcher-caret">▾</span></span>
     <span class="header-badge-sub">NEW COMPANY</span>
@@ -660,6 +661,39 @@ function showAccessDenied() {
   document.getElementById('user-badge').style.display = 'none';
 }
 
+
+// ---- Seasonal decorations + the shared Claude-at-a-CRT loading animation (HELM's einbau-festive.js) ----
+// If that script didn't load, everything below quietly falls back to the plain spinner/text.
+function startFestive() {
+  const go = () => { try { if (window.EinbauFestive) window.EinbauFestive.init({ app: 'INTAKE' }); } catch (e) {} };
+  if (window.EinbauFestive) go(); else window.addEventListener('load', go, { once: true });
+}
+// Puts the shared loader into `el` (text only when the user needs specific information).
+// It removes itself when something else replaces el's content, so existing "done"/error
+// code that overwrites the status text needs no change.
+function showLoading(el, text, size, fallbackText) {
+  if (!el) return null;
+  const EF = window.EinbauFestive;
+  if (!EF || typeof EF.loader !== 'function') {
+    el.textContent = '';
+    const sp = document.createElement('span'); sp.className = 'spinner'; el.appendChild(sp);
+    el.appendChild(document.createTextNode(' ' + (text || fallbackText || 'Loading\u2026')));
+    return null;
+  }
+  el.textContent = '';
+  const l = EF.loader(el, { size: size || 36, text: text || undefined });
+  const node = el.lastElementChild;
+  if (window.MutationObserver && node) {
+    const mo = new MutationObserver(() => { if (!el.contains(node)) { try { l.remove(); } catch (e) {} mo.disconnect(); } });
+    mo.observe(el, { childList: true });
+  }
+  return l;
+}
+function loadingPhrase(fallback) {
+  try { if (window.EinbauFestive && window.EinbauFestive.phrase) return window.EinbauFestive.phrase(); } catch (e) {}
+  return fallback;
+}
+
 function showApp() {
   // Additive to the login check above — see auth-worker/README.md, "The user
   // object, and the apps field". Fail-closed: auth-worker always returns `apps`
@@ -679,6 +713,7 @@ function showApp() {
   document.getElementById('user-badge').style.display = 'flex';
   document.getElementById('current-user-name').textContent = currentUser ? currentUser.displayName : '';
   initAppSwitcher(); // re-render now that we know who's logged in — affects the PUNCH link
+  startFestive();
   if (!document.querySelector('#contacts-list .contact-row')) addContactRow();
   // Popout mode skips the tabs entirely (entity type's implied - always a
   // Customer, per SCOUT's own flow) so nothing needs gating there.
@@ -791,7 +826,7 @@ async function parseEmail() {
   const btn = document.getElementById('parse-btn');
   const status = document.getElementById('parse-status');
   btn.disabled = true;
-  status.innerHTML = '<span class="spinner"></span> Parsing…';
+  showLoading(status, undefined, 30, 'Parsing…');
   hideSignatureHint();
 
   const prompt = buildParsePrompt(emailText);
