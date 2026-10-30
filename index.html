@@ -1667,7 +1667,7 @@ async function findProcoreVendorIdForEntity(nsEntityId) {
   const res = await nsFetch(NETSUITE_WORKER_URL, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
     body: JSON.stringify({ method: 'POST', path: '/query/v1/suiteql',
-      data: { q: `SELECT custrecord_r_it_entity_pc_id FROM customrecord_r_it_entity_pc_ids WHERE custrecord_r_it_entity_record = '${nsEntityId}' AND custrecord_r_it_link LIKE '%/company/directory/vendors/%'` } })
+      data: { q: `SELECT custrecord_r_it_entity_pc_id FROM customrecord_r_it_entity_pc_ids WHERE custrecord_r_it_entity_record = '${nsEntityId}' AND (custrecord_r_it_link IS NULL OR custrecord_r_it_link LIKE '%/company/directory/vendors/%')` } })
   });
   const data = await res.json();
   const item = data.items && data.items[0];
